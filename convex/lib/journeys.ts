@@ -3,6 +3,8 @@
  * Pure functions only, so they stay testable without a Convex deployment.
  */
 
+import type { SortMode } from "./filters";
+
 export const ACCEPTED_MODES =
   "BUS,TRAM,SUBWAY,FERRY,SUBURBAN,REGIONAL_RAIL,REGIONAL_FAST_RAIL,FUNICULAR,AERIAL_LIFT";
 
@@ -86,6 +88,8 @@ export interface TransitLeg {
   e?: 1;
   /** Disruption texts. */
   w?: string[];
+  /** Trip id, used to follow this vehicle live. */
+  i?: string;
 }
 
 /** A walking leg, duration in minutes. */
@@ -163,6 +167,7 @@ function mapLeg(leg: UpstreamLeg): Leg {
   const arrivalDelay = toMinutes(leg.endTime) - scheduledEnd;
   if (departureDelay !== 0) out.x = departureDelay;
   if (arrivalDelay !== 0) out.y = arrivalDelay;
+  if (leg.tripId) out.i = leg.tripId;
   if (leg.headsign) out.h = tidyName(leg.headsign);
   if (leg.from.track) out.g = leg.from.track;
   if (leg.to.track) out.k = leg.to.track;
@@ -213,12 +218,21 @@ function dropWastefulWaits(itineraries: UpstreamItinerary[]): UpstreamItinerary[
 
 /** A walk may start this much before the requested time, as it does on bahn.de (walk times differ slightly). */
 const WALK_TOLERANCE_MINUTES = 5;
+/** Sorting reorders what is close in time: nobody leaving now wants this afternoon's train first. */
+const SORT_HORIZON_MINUTES = 240;
 
 export interface MergeOptions {
   /** Requested time in minutes since the epoch; earlier departures are removed. */
   notBefore?: number;
   /** Requested time in minutes since the epoch; later arrivals are removed. */
   notAfter?: number;
+  /** Latest first departure of a window. */
+  lastDeparture?: number;
+  /** Earliest final arrival of a window. */
+  firstArrival?: number;
+  /** Time windows are complete, so paging beyond them makes no sense. */
+  windowed?: boolean;
+  sort?: SortMode;
   limit?: number;
 }
 
@@ -252,12 +266,36 @@ export function mergePlans(plans: UpstreamPlan[], options: MergeOptions = {}): J
         toMinutes(item.endTime) <= notAfter + WALK_TOLERANCE_MINUTES,
     );
   }
-  itineraries = dropWastefulWaits(itineraries).sort(
+  if (options.lastDeparture !== undefined) {
+    const latest = options.lastDeparture;
+    itineraries = itineraries.filter((item) => firstDeparture(item) <= latest);
+  }
+  if (options.firstArrival !== undefined) {
+    const earliest = options.firstArrival;
+    itineraries = itineraries.filter((item) => lastArrival(item) >= earliest);
+  }
+  // Someone asking for few transfers accepts a longer wait for them.
+  if (options.sort !== "few") itineraries = dropWastefulWaits(itineraries);
+  itineraries.sort(
     (left, right) =>
       firstDeparture(left) - firstDeparture(right) || lastArrival(left) - lastArrival(right),
   );
+  if (options.sort && itineraries.length && !options.windowed) {
+    const horizon = firstDeparture(itineraries[0]) + SORT_HORIZON_MINUTES;
+    itineraries = itineraries.filter((item) => firstDeparture(item) <= horizon);
+  }
+  if (options.sort === "fast") {
+    itineraries.sort((left, right) => left.duration - right.duration);
+  } else if (options.sort === "few") {
+    itineraries.sort(
+      (left, right) =>
+        transitLegs(left).length - transitLegs(right).length || left.duration - right.duration,
+    );
+  }
   const limited =
-    notAfter !== undefined ? itineraries.slice(-limit) : itineraries.slice(0, limit);
+    notAfter !== undefined && !options.sort && !options.windowed
+      ? itineraries.slice(-limit)
+      : itineraries.slice(0, limit);
 
   const payload: JourneysPayload = {
     j: limited.map((itinerary) => ({
@@ -268,8 +306,8 @@ export function mergePlans(plans: UpstreamPlan[], options: MergeOptions = {}): J
 
   const next = plans.map((plan) => plan.nextPageCursor ?? "").join("~");
   const previous = plans.map((plan) => plan.previousPageCursor ?? "").join("~");
-  if (next.replaceAll("~", "")) payload.n = next;
-  if (previous.replaceAll("~", "")) payload.p = previous;
+  if (!options.windowed && next.replaceAll("~", "")) payload.n = next;
+  if (!options.windowed && previous.replaceAll("~", "")) payload.p = previous;
 
   const walkOnly = plans
     .flatMap((plan) => plan.direct ?? [])

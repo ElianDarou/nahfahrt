@@ -9,9 +9,11 @@
  */
 
 import type * as http from "../http.js";
+import type * as lib_filters from "../lib/filters.js";
 import type * as lib_journeys from "../lib/journeys.js";
 import type * as lib_places from "../lib/places.js";
 import type * as lib_transitous from "../lib/transitous.js";
+import type * as lib_trip from "../lib/trip.js";
 import type * as quota from "../quota.js";
 
 import type {
@@ -22,9 +24,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   http: typeof http;
+  "lib/filters": typeof lib_filters;
   "lib/journeys": typeof lib_journeys;
   "lib/places": typeof lib_places;
   "lib/transitous": typeof lib_transitous;
+  "lib/trip": typeof lib_trip;
   quota: typeof quota;
 }>;
 

@@ -83,3 +83,17 @@ export const AddressIcon = () => (
     <circle cx="12" cy="9.5" r="2.5" />
   </Icon>
 );
+
+export function BookmarkIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M6 3.5h12V21l-6-4.2L6 21z"
+        fill={filled ? "var(--accent)" : "none"}
+        stroke={filled ? "var(--accent)" : "currentColor"}
+        stroke-width="2"
+        stroke-linejoin="round"
+      />
+    </svg>
+  );
+}

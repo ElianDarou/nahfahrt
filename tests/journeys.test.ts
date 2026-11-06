@@ -74,6 +74,7 @@ describe("mergePlans", () => {
       g: "1",
       k: "2",
       r: 1,
+      i: "RE7-2026-11-09T07:05:00Z",
     });
     expect(payload.j[0].u).toBe(0);
   });
@@ -142,6 +143,77 @@ describe("mergePlans", () => {
     );
     expect(payload.j).toHaveLength(1);
     expect((payload.j[0].l[0] as TransitLeg).n).toBe("2026-11-09T06:19:00Z");
+  });
+
+  it("sorts by duration or transfers on request", () => {
+    const quick = trip([vehicle("Schnell", "2026-11-09T08:00:00Z", "2026-11-09T08:30:00Z")]);
+    const slowDirect = trip([vehicle("Direkt", "2026-11-09T07:00:00Z", "2026-11-09T09:00:00Z")]);
+    const changing = trip([
+      vehicle("Eins", "2026-11-09T07:30:00Z", "2026-11-09T07:50:00Z"),
+      vehicle("Zwei", "2026-11-09T07:55:00Z", "2026-11-09T08:45:00Z"),
+    ]);
+    const plans = [{ itineraries: [changing, slowDirect, quick] }];
+    const first = (sort: "fast" | "few") =>
+      (mergePlans(plans, { sort }).j[0].l[0] as TransitLeg).n;
+    expect(first("fast")).toBe("Schnell");
+    expect(first("few")).toBe("Schnell");
+    expect((mergePlans(plans, { sort: "few" }).j[2].l[0] as TransitLeg).n).toBe("Eins");
+  });
+
+  it("sorts only what is close in time", () => {
+    const payload = mergePlans(
+      [
+        {
+          itineraries: [
+            trip([vehicle("Jetzt", "2026-11-09T07:00:00Z", "2026-11-09T09:00:00Z")]),
+            trip([vehicle("Nachmittag", "2026-11-09T14:00:00Z", "2026-11-09T15:00:00Z")]),
+          ],
+        },
+      ],
+      { sort: "fast" },
+    );
+    expect(payload.j.map((journey) => (journey.l[0] as TransitLeg).n)).toEqual(["Jetzt"]);
+  });
+
+  it("keeps long waits when few transfers are wanted", () => {
+    const plans = [
+      {
+        itineraries: [
+          trip([vehicle("Direkt", "2026-11-09T07:00:00Z", "2026-11-09T12:00:00Z")]),
+          trip([
+            vehicle("Eins", "2026-11-09T07:00:00Z", "2026-11-09T07:30:00Z"),
+            vehicle("Zwei", "2026-11-09T07:40:00Z", "2026-11-09T08:30:00Z"),
+          ]),
+        ],
+      },
+    ];
+    expect(mergePlans(plans).j).toHaveLength(1);
+    expect((mergePlans(plans, { sort: "few" }).j[0].l[0] as TransitLeg).n).toBe("Direkt");
+  });
+
+  it("applies time windows and offers no paging beyond them", () => {
+    const payload = mergePlans(
+      [
+        {
+          nextPageCursor: "LATER|1",
+          itineraries: [
+            trip([vehicle("Zu früh", "2026-11-09T06:00:00Z", "2026-11-09T06:30:00Z")]),
+            trip([vehicle("Passt", "2026-11-09T07:10:00Z", "2026-11-09T07:40:00Z")]),
+            trip([vehicle("Zu spät", "2026-11-09T08:10:00Z", "2026-11-09T08:40:00Z")]),
+            trip([vehicle("Kommt zu früh an", "2026-11-09T07:00:00Z", "2026-11-09T07:10:00Z")]),
+          ],
+        },
+      ],
+      {
+        notBefore: minutes("2026-11-09T07:00:00Z"),
+        lastDeparture: minutes("2026-11-09T08:00:00Z"),
+        firstArrival: minutes("2026-11-09T07:30:00Z"),
+        notAfter: minutes("2026-11-09T09:00:00Z"),
+        windowed: true,
+      },
+    );
+    expect(payload.j.map((journey) => (journey.l[0] as TransitLeg).n)).toEqual(["Passt"]);
+    expect(payload.n).toBeUndefined();
   });
 
   it("combines paging cursors of both searches", () => {

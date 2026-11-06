@@ -1,5 +1,6 @@
 import type { JourneysPayload } from "../convex/lib/journeys";
 import type { Place } from "../convex/lib/places";
+import type { TripPayload } from "../convex/lib/trip";
 import type { Station } from "./store";
 
 const BASE = (import.meta.env.VITE_CONVEX_SITE_URL as string).replace(/\/$/, "");
@@ -42,10 +43,12 @@ export interface JourneyQuery {
   at: number;
   arriveBy: boolean;
   cursor?: string;
+  filters?: Record<string, string>;
 }
 
 export function searchJourneys(query: JourneyQuery, signal?: AbortSignal): Promise<JourneysPayload> {
   const params: Record<string, string> = {
+    ...query.filters,
     from: query.from.id ?? coordinates(query.from),
     to: query.to.id ?? coordinates(query.to),
     at: new Date(Math.floor(query.at / 60000) * 60000).toISOString(),
@@ -57,6 +60,19 @@ export function searchJourneys(query: JourneyQuery, signal?: AbortSignal): Promi
   if (query.arriveBy) params.arrive = "1";
   if (query.cursor) params.cursor = query.cursor;
   return get<JourneysPayload>("/v1/journeys", params, signal);
+}
+
+export function followTrip(
+  trip: { id: string; boardAt: number; alightAt: number; update: boolean },
+  signal?: AbortSignal,
+): Promise<TripPayload> {
+  const query: Record<string, string> = {
+    id: trip.id,
+    a: String(trip.boardAt),
+    b: String(trip.alightAt),
+  };
+  if (trip.update) query.u = "1";
+  return get<TripPayload>("/v1/trip", query, signal);
 }
 
 export function errorText(error: unknown): string {

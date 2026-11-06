@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
+import { AdvancedSearch } from "./advanced";
+import {
+  defaultFilters,
+  filterProblem,
+  filtersToQuery,
+  hasTimeWindow,
+  windowLabel,
+  type FilterState,
+} from "./filters";
+import { formatDay, formatTime, vehicles } from "./format";
 import { CloseIcon, SwapIcon } from "./icons";
+import { Live } from "./live";
 import { Picker } from "./picker";
+import { journeyStart, progressOf } from "./progress";
 import { Results, type When } from "./results";
+import { getSaved, removeSaved } from "./saved";
 import {
   displayName,
   displaySub,
@@ -12,7 +25,7 @@ import {
   type Station,
 } from "./store";
 
-type View = "home" | "pick-from" | "pick-to" | "results";
+type View = "home" | "pick-from" | "pick-to" | "pick-via" | "results" | "live";
 type WhenMode = "now" | "departure" | "arrival";
 
 const SOURCES_URL = "https://transitous.org/sources/";
@@ -45,8 +58,26 @@ export function App() {
   const [to, setTo] = useState<Station>();
   const [whenMode, setWhenMode] = useState<WhenMode>("now");
   const [dateTime, setDateTime] = useState(localInputValue);
-  const [activeSearch, setActiveSearch] = useState<{ from: Station; to: Station; when: When }>();
+  const [activeSearch, setActiveSearch] = useState<{
+    id: number;
+    from: Station;
+    to: Station;
+    when: When;
+  }>();
   const [, setRevision] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [liveKey, setLiveKey] = useState<string>();
+  const [liveFromResults, setLiveFromResults] = useState(false);
+  const [clock, setClock] = useState(() => Date.now() / 60000);
+
+  // Keeps the status of saved connections current without any network use.
+  useEffect(() => {
+    if (view !== "home") return;
+    setClock(Date.now() / 60000);
+    const timer = setInterval(() => setClock(Date.now() / 60000), 30_000);
+    return () => clearInterval(timer);
+  }, [view]);
 
   // The Android back button walks through the browser history.
   useEffect(() => {
@@ -61,18 +92,29 @@ export function App() {
   }, []);
   const back = useCallback(() => history.back(), []);
 
-  const buildWhen = (mode: WhenMode): When =>
-    mode === "now"
-      ? { arriveBy: false }
-      : { at: new Date(dateTime).getTime(), arriveBy: mode === "arrival" };
+  const buildWhen = (mode: WhenMode): When => {
+    const query = filtersToQuery(filters);
+    const label = windowLabel(filters);
+    if (hasTimeWindow(filters)) return { at: Date.now(), arriveBy: false, filters: query, label };
+    return mode === "now"
+      ? { arriveBy: false, filters: query }
+      : { at: new Date(dateTime).getTime(), arriveBy: mode === "arrival", filters: query };
+  };
+
+  const openLive = (key: string, fromResults: boolean) => {
+    setLiveKey(key);
+    setLiveFromResults(fromResults);
+    open("live");
+  };
 
   const startSearch = (start: Station, destination: Station, when: When) => {
+    setAdvancedOpen(false);
     const usedStart = recordStationUse(start);
     const usedDestination = recordStationUse(destination);
     recordRoute(usedStart, usedDestination);
     setFrom(usedStart);
     setTo(usedDestination);
-    setActiveSearch({ from: usedStart, to: usedDestination, when });
+    setActiveSearch({ id: Date.now(), from: usedStart, to: usedDestination, when });
     open("results");
   };
 
@@ -91,20 +133,48 @@ export function App() {
     );
   }
 
-  if (view === "results" && activeSearch) {
+  if (view === "pick-via") {
     return (
-      <Results
-        from={activeSearch.from}
-        to={activeSearch.to}
-        when={activeSearch.when}
-        onBack={back}
+      <Picker
+        title="Zwischenhalt wählen"
+        stopsOnly
+        onClose={back}
+        onPick={(station) => {
+          setFilters({ ...filters, via: station });
+          back();
+        }}
       />
+    );
+  }
+
+  // Results stay mounted below the live view, so going back costs no new search.
+  const showResults = view === "results" || (view === "live" && liveFromResults);
+  if (view === "live" || (view === "results" && activeSearch)) {
+    return (
+      <>
+        {activeSearch && showResults && (
+          <div hidden={view === "live"} class="view">
+            <Results
+              key={activeSearch.id}
+              from={activeSearch.from}
+              to={activeSearch.to}
+              when={activeSearch.when}
+              visible={view === "results"}
+              onBack={back}
+              onFollow={(key) => openLive(key, true)}
+            />
+          </div>
+        )}
+        {view === "live" && liveKey && <Live key={liveKey} savedKey={liveKey} onBack={back} />}
+      </>
     );
   }
 
   const routes = topRoutes(5);
   const sameStation = !!from && !!to && from.key === to.key;
   const validTime = whenMode === "now" || !Number.isNaN(new Date(dateTime).getTime());
+  const problem = filterProblem(filters);
+  const saved = getSaved(clock);
 
   return (
     <div class="screen">
@@ -160,16 +230,66 @@ export function App() {
             />
           )}
 
+          <AdvancedSearch
+            open={advancedOpen}
+            onToggle={() => setAdvancedOpen(!advancedOpen)}
+            filters={filters}
+            onChange={setFilters}
+            onPickVia={() => open("pick-via")}
+          />
+
           <button
             type="button"
             class="primary"
-            disabled={!from || !to || sameStation || !validTime}
+            disabled={!from || !to || sameStation || !validTime || !!problem}
             onClick={() => from && to && startSearch(from, to, buildWhen(whenMode))}
           >
             Verbindungen suchen
           </button>
           {sameStation && <p class="note note-warn">Start und Ziel sind gleich.</p>}
+          {problem && <p class="note note-warn">{problem}</p>}
         </section>
+
+        {saved.length > 0 && (
+          <section>
+            <h2 class="home-heading">Gemerkte Verbindungen</h2>
+            <ul class="routes">
+              {saved.map((entry) => {
+                const state = progressOf(entry.journey, entry.stops, clock);
+                const legs = vehicles(entry.journey);
+                const moving = state.phase !== "upcoming";
+                return (
+                  <li class="route" key={entry.key}>
+                    <button type="button" class="route-main" onClick={() => openLive(entry.key, false)}>
+                      <span class="route-title">
+                        {entry.from} → {entry.to}
+                      </span>
+                      <span class="route-sub">
+                        {formatDay(journeyStart(entry.journey))},{" "}
+                        {formatTime(legs[0].a + (legs[0].x ?? 0))}–
+                        {formatTime(legs[legs.length - 1].b + (legs[legs.length - 1].y ?? 0))}
+                      </span>
+                      <span class={moving ? "route-status route-status-live" : "route-status"}>
+                        {state.headline}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="icon-button"
+                      aria-label="Nicht mehr merken"
+                      onClick={() => {
+                        removeSaved(entry.key);
+                        setRevision((revision) => revision + 1);
+                      }}
+                    >
+                      <CloseIcon />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
 
         {routes.length > 0 && (
           <section>
