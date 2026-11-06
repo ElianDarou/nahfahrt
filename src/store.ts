@@ -14,7 +14,20 @@ export interface Station {
   last: number;
   fav?: boolean;
   label?: string;
+  /** The current position: coordinates are fetched per search and never stored. */
+  me?: boolean;
 }
+
+export const LOCATION_STATION: Station = {
+  key: "me",
+  name: "Mein Standort",
+  lat: 0,
+  lon: 0,
+  addr: true,
+  count: 0,
+  last: 0,
+  me: true,
+};
 
 export interface Route {
   from: string;
@@ -81,6 +94,7 @@ function saveStations(stations: Station[]): void {
 }
 
 function upsert(station: Station, change: (known: Station) => Station): Station {
+  if (station.me) return station;
   const stations = getStations();
   const index = stations.findIndex((known) => known.key === station.key);
   const known = index >= 0 ? stations[index] : station;
@@ -115,6 +129,15 @@ export function clearHistory(): void {
   saveStations(getStations().filter((s) => s.fav).map((s) => ({ ...s, count: 0, last: 0 })));
 }
 
+/** What a place from the backend, or a stop of a trip, is already known as. */
+export function findKnownStation(name: string, lat?: number, lon?: number): Station | undefined {
+  const named = getStations().filter((station) => station.name === name);
+  if (lat === undefined || lon === undefined) return named.length === 1 ? named[0] : undefined;
+  return named.find(
+    (station) => Math.hypot((station.lat - lat) * 111_000, (station.lon - lon) * 74_000) < 500,
+  );
+}
+
 export const displayName = (station: Station): string => station.label || station.name;
 
 export function displaySub(station: Station): string | undefined {
@@ -133,6 +156,7 @@ export function regionHint(): string | undefined {
 export const getRoutes = (): Route[] => read<Route[]>(ROUTES, []);
 
 export function recordRoute(from: Station, to: Station): void {
+  if (from.me || to.me) return;
   const routes = getRoutes();
   const known = routes.find((route) => route.from === from.key && route.to === to.key);
   if (known) {
@@ -166,6 +190,7 @@ export function removeRoute(route: Route): void {
 }
 
 export function saveJourneys(from: Station, to: Station, payload: JourneysPayload): void {
+  if (from.me || to.me) return;
   const others = read<CachedJourneys[]>(JOURNEYS, []).filter(
     (entry) => entry.from !== from.key || entry.to !== to.key,
   );
@@ -182,6 +207,7 @@ export function loadJourneys(
   from: Station,
   to: Station,
 ): { savedAt: number; payload: JourneysPayload } | undefined {
+  if (from.me || to.me) return undefined;
   return read<CachedJourneys[]>(JOURNEYS, []).find(
     (entry) => entry.from === from.key && entry.to === to.key,
   );

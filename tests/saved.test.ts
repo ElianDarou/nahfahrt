@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Journey, TransitLeg } from "../convex/lib/journeys";
 import { activeFilterCount, defaultFilters, filterProblem, filtersToQuery } from "../src/filters";
-import { applyTrip, isExpired, vehiclesToFollow, type SavedJourney } from "../src/saved";
+import { applyTrip, hasCoordinates, isExpired, vehiclesToFollow, type SavedJourney } from "../src/saved";
 
 const journey: Journey = {
   u: 1,
@@ -67,6 +67,20 @@ describe("applyTrip", () => {
       { n: "C", a: 1060, d: undefined, x: 2 },
     ]);
     expect((updated.journey.l[2] as TransitLeg).x).toBeUndefined();
+  });
+
+  it("keeps coordinates through updates and spots lists that lack them", () => {
+    const loaded = applyTrip(
+      entry,
+      1,
+      { s: [{ n: "B", d: 1030, la: 48, lo: 9 }, { n: "C", a: 1060, la: 49, lo: 10 }] },
+      false,
+    )!;
+    expect(hasCoordinates(loaded.stops[1])).toBe(true);
+    const updated = applyTrip(loaded, 1, { s: [{ y: 2 }, {}] }, true)!;
+    expect(updated.stops[1]?.[0]).toMatchObject({ la: 48, lo: 9, y: 2 });
+    expect(hasCoordinates([{ n: "B" }])).toBe(false);
+    expect(hasCoordinates(undefined)).toBe(false);
   });
 
   it("asks for a new stop list when an update does not fit", () => {

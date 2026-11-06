@@ -53,6 +53,16 @@ body {
   color: var(--text);
   font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   overscroll-behavior: none;
+  /* Holding a finger on something opens its actions, not Android's copy menu. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button,
@@ -897,7 +907,7 @@ p {
   position: fixed;
   left: 50%;
   bottom: calc(20px + var(--bottom));
-  z-index: 5;
+  z-index: 30;
   width: max-content;
   max-width: calc(100% - 32px);
   padding: 10px 16px;
@@ -1113,4 +1123,216 @@ p {
   gap: 4px;
   min-height: 40px;
   font-size: 14px;
+}
+
+.station-button {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button.stop-name,
+button.detail-name {
+  min-height: 24px;
+  text-align: left;
+}
+
+.row-icon-accent {
+  color: var(--accent);
+}
+
+.row-spinner {
+  flex: none;
+  margin-right: 14px;
+}
+
+.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.with-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.overlay-bottom {
+  z-index: 20;
+  align-items: flex-end;
+  padding: 0;
+}
+
+.sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  width: min(100%, 640px);
+  max-height: calc(100% - var(--top) - 24px);
+  padding: 20px 16px calc(12px + var(--bottom));
+  border-radius: 18px 18px 0 0;
+  background: var(--surface);
+}
+
+.sheet-title {
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sheet-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.spinner-small {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.sheet-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 4px;
+}
+
+.sheet-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 0 4px;
+  border-top: 1px solid var(--line);
+  font-size: 17px;
+}
+
+.sheet-action:disabled {
+  color: var(--muted);
+}
+
+.sheet-close {
+  justify-self: end;
+}
+
+.share-sheet {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: calc(100% - var(--top) - 24px);
+}
+
+.share-scroll {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.share-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.share-text {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  resize: vertical;
+}
+
+.toggle-chip:disabled {
+  opacity: 0.5;
+}
+
+.live-actions {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.live-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 62px;
+  padding: 6px 2px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.live-action-on {
+  color: var(--accent);
+}
+
+.position {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.position div {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.position dt {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.position dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.position small {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.position small:not([class]) {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.position-note {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.here-marker-plan {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.here-dot-plan {
+  border: 3px dashed var(--muted);
+  background: var(--surface);
+  box-shadow: none;
 }

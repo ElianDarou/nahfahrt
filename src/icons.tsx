@@ -97,3 +97,49 @@ export function BookmarkIcon({ filled }: { filled: boolean }) {
     </svg>
   );
 }
+
+export const LocationIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="3.5" />
+    <circle cx="12" cy="12" r="7.5" />
+    <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22" />
+  </Icon>
+);
+
+export const NearbyIcon = () => (
+  <Icon>
+    <path d="M12 21s6-5.6 6-10.2A6 6 0 0 0 6 10.8C6 15.4 12 21 12 21z" />
+    <path d="M9.5 9h5M9.5 12h5" />
+  </Icon>
+);
+
+export const StartIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="7" />
+    <circle cx="12" cy="12" r="1.5" />
+  </Icon>
+);
+
+export const ShareIcon = () => (
+  <Icon>
+    <circle cx="18" cy="5.5" r="2.5" />
+    <circle cx="6" cy="12" r="2.5" />
+    <circle cx="18" cy="18.5" r="2.5" />
+    <path d="M8.2 10.8l7.6-4.1M8.2 13.2l7.6 4.1" />
+  </Icon>
+);
+
+export function BellIcon({ on }: { on: boolean }) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 21h4"
+        fill={on ? "var(--accent)" : "none"}
+        stroke={on ? "var(--accent)" : "currentColor"}
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  );
+}

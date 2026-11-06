@@ -8,6 +8,7 @@ import {
   followTrip,
   planCallsFor,
   searchJourneys,
+  searchNearby,
   searchPlaces,
   type Endpoint,
   type JourneySearch,
@@ -58,7 +59,7 @@ function readSearch(params: URLSearchParams): JourneySearch | null {
 
 const http = httpRouter();
 
-for (const path of ["/v1/places", "/v1/journeys", "/v1/trip"]) {
+for (const path of ["/v1/places", "/v1/nearby", "/v1/journeys", "/v1/trip"]) {
   http.route({
     path,
     method: "OPTIONS",
@@ -84,12 +85,31 @@ http.route({
   }),
 });
 
+// A position stays out of every cache, so this response is never stored.
+http.route({
+  path: "/v1/nearby",
+  method: "GET",
+  handler: httpAction(async (_ctx, request) => {
+    const position = new URL(request.url).searchParams.get("at") ?? "";
+    if (!COORDINATES.test(position)) return failure("bad_request", 400);
+    try {
+      return json({ r: await searchNearby(position) }, 200);
+    } catch {
+      console.error("nearby search failed");
+      return failure("upstream", 502);
+    }
+  }),
+});
+
 http.route({
   path: "/v1/journeys",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const search = readSearch(new URL(request.url).searchParams);
+    const params = new URL(request.url).searchParams;
+    const search = readSearch(params);
     if (!search) return failure("bad_request", 400);
+    // A search from the current position carries it in the URL, so nothing may cache it.
+    const cacheSeconds = params.get("priv") === "1" ? 0 : 30;
 
     const allowed = await ctx.runMutation(internal.quota.reservePlanCalls, {
       calls: planCallsFor(search),
@@ -97,9 +117,9 @@ http.route({
     if (!allowed) return failure("daily_limit", 429);
 
     try {
-      return json(await searchJourneys(search), 200, 30);
+      return json(await searchJourneys(search), 200, cacheSeconds);
     } catch (error) {
-      console.error("journey search failed", error);
+      console.error("journey search failed", error instanceof UpstreamError ? error.status : "network");
       const unknownPlace = error instanceof UpstreamError && error.status === 404;
       return failure(unknownPlace ? "unknown_place" : "upstream", unknownPlace ? 404 : 502);
     }

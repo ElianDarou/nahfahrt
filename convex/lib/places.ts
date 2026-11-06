@@ -110,3 +110,10 @@ export function mapPlaces(matches: UpstreamMatch[], limit = 10): Place[] {
     )
     .slice(0, limit);
 }
+
+/** Public transport stops around a position; ride-sharing points are no stops to wait at. */
+export const mapNearby = (matches: UpstreamMatch[], limit = 8): Place[] =>
+  mapPlaces(
+    matches.filter((match) => !isCarpoolFeed(match.id)),
+    limit,
+  );

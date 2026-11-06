@@ -6,6 +6,9 @@ const config: CapacitorConfig = {
   webDir: "dist",
   server: { androidScheme: "https" },
   android: { allowMixedContent: false },
+  plugins: {
+    LocalNotifications: { smallIcon: "ic_stat_nahfahrt", iconColor: "#0b7a50" },
+  },
 };
 
 export default config;

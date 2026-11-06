@@ -9,12 +9,12 @@ import {
   type UpstreamPlan,
 } from "./journeys";
 import { hasWindow, upstreamModes, type SearchFilters } from "./filters";
-import { mapPlaces, type Place, type UpstreamMatch } from "./places";
+import { mapNearby, mapPlaces, type Place, type UpstreamMatch } from "./places";
 import { mapTrip, type TripPayload, type UpstreamTrip } from "./trip";
 
 const BASE_URL = "https://api.transitous.org/api";
 // Transitous asks every client to identify itself and name a way of contact.
-const USER_AGENT = "Nahfahrt/0.2 (+https://github.com/ElianDarou/nahfahrt)";
+const USER_AGENT = "Nahfahrt/0.3 (+https://github.com/ElianDarou/nahfahrt)";
 const TIMEOUT_MS = 12_000;
 /** Germany's rough centre, used when the app has no better location hint. */
 const GERMANY_CENTRE = "51.1,10.4";
@@ -235,6 +235,13 @@ export async function followTrip(
     detailedLegs: "false",
   });
   return mapTrip(trip, boardAt, alightAt, update);
+}
+
+/** Stops around a position. The position is passed on, never kept. */
+export async function searchNearby(position: string): Promise<Place[]> {
+  return mapNearby(
+    await getJson<UpstreamMatch[]>("/v1/reverse-geocode", { place: position, type: "STOP" }),
+  );
 }
 
 /** Searches stops and, when useful, addresses. */
