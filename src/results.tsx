@@ -16,9 +16,13 @@ import {
   transfers,
   vehicles,
 } from "./format";
-import { BackIcon, BookmarkIcon, ChevronIcon, RefreshIcon } from "./icons";
-import { getSaved, removeSaved, saveJourney, savedKey } from "./saved";
+import { BackIcon, BookmarkIcon, ChevronIcon, RefreshIcon, ShareIcon } from "./icons";
+import { withPosition } from "./location";
+import { forgetSaved } from "./reminders";
+import { getSaved, saveJourney, savedKey } from "./saved";
+import { StationButton } from "./station-sheet";
 import { displayName, loadJourneys, saveJourneys, type Station } from "./store";
+import type { StopRef } from "./stops";
 
 export interface When {
   /** Milliseconds since the epoch; absent means "now". */
@@ -67,7 +71,8 @@ function LineChip({ leg }: { leg: TransitLeg }) {
   );
 }
 
-function Details({ journey, now }: { journey: Journey; now: number }) {
+function Details(props: { journey: Journey; now: number; onStation: (stop: StopRef) => void }) {
+  const { journey, now } = props;
   const list = transfers(journey);
   let vehicleIndex = -1;
   return (
@@ -96,12 +101,24 @@ function Details({ journey, now }: { journey: Journey; now: number }) {
             {leg.c && <p class="note note-bad">Fällt aus</p>}
             <div class="detail-stop">
               <Time scheduled={leg.a} delay={leg.x} live={!!leg.r} />
-              <span class="detail-name">{leg.f}</span>
+              <StationButton
+                class="detail-name"
+                stop={{ name: leg.f, leg, end: "from" }}
+                onOpen={props.onStation}
+              >
+                {leg.f}
+              </StationButton>
               {leg.g && <span class="platform">Gl. {leg.g}</span>}
             </div>
             <div class="detail-stop">
               <Time scheduled={leg.b} delay={leg.y} live={!!leg.r} />
-              <span class="detail-name">{leg.t}</span>
+              <StationButton
+                class="detail-name"
+                stop={{ name: leg.t, leg, end: "to" }}
+                onOpen={props.onStation}
+              >
+                {leg.t}
+              </StationButton>
               {leg.k && <span class="platform">Gl. {leg.k}</span>}
             </div>
             {noLive && <p class="note">Keine Live-Daten</p>}
@@ -123,6 +140,8 @@ function Card(props: {
   saved: boolean;
   onToggleSave: () => void;
   onFollow: () => void;
+  onShare: () => void;
+  onStation: (stop: StopRef) => void;
 }) {
   const { journey, now, saved } = props;
   const [open, setOpen] = useState(false);
@@ -175,8 +194,11 @@ function Card(props: {
       </button>
       {open && (
         <>
-          <Details journey={journey} now={now} />
+          <Details journey={journey} now={now} onStation={props.onStation} />
           <div class="card-actions">
+            <button type="button" class="text-button with-icon" onClick={props.onShare}>
+              <ShareIcon /> Teilen
+            </button>
             <button type="button" class="text-button" onClick={props.onFollow}>
               Live verfolgen
             </button>
@@ -210,6 +232,8 @@ export function Results(props: {
   visible: boolean;
   onBack: () => void;
   onFollow: (key: string) => void;
+  onShare: (from: string, to: string, journey: Journey) => void;
+  onStation: (stop: StopRef) => void;
 }) {
   const { from, to, when } = props;
   const [savedKeys, setSavedKeys] = useState(() => new Set(getSaved().map((entry) => entry.key)));
@@ -230,7 +254,7 @@ export function Results(props: {
   const toggleSave = (journey: Journey) => {
     const key = savedKey(journey);
     if (savedKeys.has(key)) {
-      removeSaved(key);
+      forgetSaved(key);
       showToast("Nicht mehr gemerkt");
     } else {
       saveJourney(displayName(from), displayName(to), journey);
@@ -264,7 +288,14 @@ export function Results(props: {
     const at = when.at ?? Date.now();
     setNow(Math.floor(Date.now() / 60000));
 
-    searchJourneys({ from, to, at, arriveBy: when.arriveBy, filters: when.filters }, controller.signal)
+    // "Mein Standort" gets its coordinates here, for this one request.
+    Promise.all([withPosition(from), withPosition(to)])
+      .then(([start, destination]) =>
+        searchJourneys(
+          { from: start, to: destination, at, arriveBy: when.arriveBy, filters: when.filters },
+          controller.signal,
+        ),
+      )
       .then((payload) => {
         setJourneys(payload.j);
         setEarlier(payload.p);
@@ -304,9 +335,10 @@ export function Results(props: {
     setPaging(true);
     setError(undefined);
     try {
+      const [start, destination] = await Promise.all([withPosition(from), withPosition(to)]);
       const payload = await searchJourneys({
-        from,
-        to,
+        from: start,
+        to: destination,
         at: when.at ?? Date.now(),
         arriveBy: when.arriveBy,
         cursor,
@@ -436,6 +468,8 @@ export function Results(props: {
                   saved={savedKeys.has(savedKey(journey))}
                   onToggleSave={() => toggleSave(journey)}
                   onFollow={() => follow(journey)}
+                  onShare={() => props.onShare(displayName(from), displayName(to), journey)}
+                  onStation={props.onStation}
                 />,
               ];
             })}

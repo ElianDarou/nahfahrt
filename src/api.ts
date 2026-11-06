@@ -12,12 +12,17 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, query: Record<string, string>, signal?: AbortSignal): Promise<T> {
+async function get<T>(
+  path: string,
+  query: Record<string, string>,
+  signal?: AbortSignal,
+  options: RequestInit = {},
+): Promise<T> {
   const timeout = AbortSignal.timeout(TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let response: Response;
   try {
-    response = await fetch(`${BASE}${path}?${new URLSearchParams(query)}`, { signal: combined });
+    response = await fetch(`${BASE}${path}?${new URLSearchParams(query)}`, { ...options, signal: combined });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new ApiError(timeout.aborted ? "timeout" : "offline");
@@ -31,6 +36,17 @@ export async function searchPlaces(text: string, near?: string, signal?: AbortSi
   const query: Record<string, string> = { q: text };
   if (near) query.near = near;
   const { r } = await get<{ r: Place[] }>("/v1/places", query, signal);
+  return r;
+}
+
+/** Stops around a position. Never cached, as the position is part of the address. */
+export async function nearbyStops(lat: number, lon: number, signal?: AbortSignal): Promise<Place[]> {
+  const { r } = await get<{ r: Place[] }>(
+    "/v1/nearby",
+    { at: `${lat},${lon}` },
+    signal,
+    { cache: "no-store" },
+  );
   return r;
 }
 
@@ -59,7 +75,9 @@ export function searchJourneys(query: JourneyQuery, signal?: AbortSignal): Promi
   if (query.to.addr) params.toType = "addr";
   if (query.arriveBy) params.arrive = "1";
   if (query.cursor) params.cursor = query.cursor;
-  return get<JourneysPayload>("/v1/journeys", params, signal);
+  const privately = query.from.me || query.to.me;
+  if (privately) params.priv = "1";
+  return get<JourneysPayload>("/v1/journeys", params, signal, privately ? { cache: "no-store" } : {});
 }
 
 export function followTrip(
@@ -84,6 +102,12 @@ export function errorText(error: unknown): string {
       return "Das Netz ist gerade zu langsam. Bitte versuche es noch einmal.";
     case "daily_limit":
       return "Das Tageslimit des kostenlosen Datendienstes ist erreicht. Morgen geht es weiter.";
+    case "location_denied":
+      return "Der Standort ist für Nahfahrt nicht freigegeben. Du kannst ihn in den Android-Einstellungen erlauben.";
+    case "location_off":
+      return "Dein Standort ist gerade nicht verfügbar. Ist er am Handy eingeschaltet?";
+    case "location_timeout":
+      return "Dein Standort konnte nicht bestimmt werden. Versuche es draußen noch einmal.";
     case "unknown_place":
       return "Diese Haltestelle ist nicht mehr bekannt. Bitte suche sie neu.";
     default:

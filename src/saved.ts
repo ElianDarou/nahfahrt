@@ -12,6 +12,8 @@ export interface SavedJourney {
   stops: (TripStop[] | undefined)[];
   /** When live data last arrived, in milliseconds since the epoch. */
   updatedAt?: number;
+  /** 1 when the user asked for reminders. */
+  bell?: 1;
 }
 
 const SAVED = "nf.saved.v1";
@@ -110,7 +112,7 @@ export function applyTrip(
     if (!known || known.length !== payload.s.length) return null;
     stops = known.map((stop, index) => {
       const fresh = payload.s[index];
-      return { n: stop.n, a: stop.a, d: stop.d, ...fresh };
+      return { n: stop.n, a: stop.a, d: stop.d, la: stop.la, lo: stop.lo, ...fresh };
     });
   }
 
@@ -124,6 +126,10 @@ export function applyTrip(
   allStops[vehicle] = stops;
   return { ...entry, journey: { ...entry.journey, l: legs }, stops: allStops, updatedAt: now };
 }
+
+/** Stop lists saved by older versions lack the coordinates that position and actions need. */
+export const hasCoordinates = (stops: TripStop[] | undefined): boolean =>
+  !!stops?.length && stops.every((stop) => stop.la !== undefined);
 
 /** Vehicles worth asking about: in use or starting within the next 90 minutes. */
 export function vehiclesToFollow(journey: Journey, nowMinutes: number): number[] {

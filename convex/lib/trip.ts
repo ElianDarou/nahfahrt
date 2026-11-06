@@ -9,6 +9,8 @@ export interface UpstreamStop {
   track?: string;
   scheduledTrack?: string;
   cancelled?: boolean;
+  lat?: number;
+  lon?: number;
 }
 
 export interface UpstreamTrip {
@@ -42,6 +44,10 @@ export interface TripStop {
   p?: 1;
   /** 1 when this stop is cancelled. */
   c?: 1;
+  /** Latitude to four decimals, about ten metres. */
+  la?: number;
+  /** Longitude to four decimals, about ten metres. */
+  lo?: number;
 }
 
 export interface TripPayload {
@@ -51,6 +57,8 @@ export interface TripPayload {
   /** 1 when the trip is cancelled. */
   c?: 1;
 }
+
+const roundCoordinate = (value: number): number => Math.round(value * 10000) / 10000;
 
 const minutes = (iso: string | undefined): number | undefined =>
   iso ? Math.round(Date.parse(iso) / 60000) : undefined;
@@ -92,6 +100,10 @@ export function mapTrip(
         const departure = minutes(stop.scheduledDeparture);
         if (arrival !== undefined) out.a = arrival;
         if (departure !== undefined) out.d = departure;
+        if (stop.lat !== undefined && stop.lon !== undefined) {
+          out.la = roundCoordinate(stop.lat);
+          out.lo = roundCoordinate(stop.lon);
+        }
       }
       const arrivalDelay = delay(stop.arrival, stop.scheduledArrival);
       const departureDelay = delay(stop.departure, stop.scheduledDeparture);

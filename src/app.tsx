@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { AdvancedSearch } from "./advanced";
 import {
   defaultFilters,
@@ -8,13 +8,17 @@ import {
   windowLabel,
   type FilterState,
 } from "./filters";
+import type { Journey } from "../convex/lib/journeys";
 import { formatDay, formatTime, vehicles } from "./format";
-import { CloseIcon, SwapIcon } from "./icons";
+import { BellIcon, CloseIcon, SwapIcon } from "./icons";
 import { Live } from "./live";
 import { Picker } from "./picker";
 import { journeyStart, progressOf } from "./progress";
 import { Results, type When } from "./results";
-import { getSaved, removeSaved } from "./saved";
+import { canRemind, forgetSaved, onReminderTap, setBell, syncAllReminders } from "./reminders";
+import { getSaved } from "./saved";
+import { ShareSheet } from "./share-sheet";
+import { StationSheet } from "./station-sheet";
 import {
   displayName,
   displaySub,
@@ -24,9 +28,16 @@ import {
   topRoutes,
   type Station,
 } from "./store";
+import type { StopRef } from "./stops";
 
 type View = "home" | "pick-from" | "pick-to" | "pick-via" | "results" | "live";
 type WhenMode = "now" | "departure" | "arrival";
+type Sheet =
+  | { kind: "station"; stop: StopRef }
+  | { kind: "share"; from: string; to: string; journey: Journey };
+
+/** How many steps lie between this screen and the start page. */
+const depth = (): number => (history.state?.depth as number | undefined) ?? 0;
 
 const SOURCES_URL = "https://transitous.org/sources/";
 const OSM_URL = "https://www.openstreetmap.org/copyright";
@@ -70,6 +81,10 @@ export function App() {
   const [liveKey, setLiveKey] = useState<string>();
   const [liveFromResults, setLiveFromResults] = useState(false);
   const [clock, setClock] = useState(() => Date.now() / 60000);
+  const [sheet, setSheet] = useState<Sheet>();
+  const [stationRevision, setStationRevision] = useState(0);
+  const [toast, setToast] = useState<string>();
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Keeps the status of saved connections current without any network use.
   useEffect(() => {
@@ -81,16 +96,37 @@ export function App() {
 
   // The Android back button walks through the browser history.
   useEffect(() => {
-    const onPopState = (event: PopStateEvent) => setView((event.state?.view as View) ?? "home");
+    const onPopState = (event: PopStateEvent) => {
+      setView((event.state?.view as View) ?? "home");
+      if (!event.state?.sheet) setSheet(undefined);
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const open = useCallback((next: View) => {
-    history.pushState({ view: next }, "");
+    history.pushState({ view: next, depth: depth() + 1 }, "");
     setView(next);
   }, []);
   const back = useCallback(() => history.back(), []);
+  const goHome = useCallback(() => {
+    if (depth()) history.go(-depth());
+  }, []);
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(undefined), 4000);
+  }, []);
+
+  // A sheet is a history step too, so the Android back button closes it first.
+  const openSheet = (next: Sheet) => {
+    history.pushState({ view, depth: depth() + 1, sheet: true }, "");
+    setSheet(next);
+  };
+  const openStation = (stop: StopRef) => openSheet({ kind: "station", stop });
+  const openShare = (start: string, destination: string, journey: Journey) =>
+    openSheet({ kind: "share", from: start, to: destination, journey });
 
   const buildWhen = (mode: WhenMode): When => {
     const query = filtersToQuery(filters);
@@ -107,6 +143,20 @@ export function App() {
     open("live");
   };
 
+  // Reminders move along when the app comes back, and lead back to their connection.
+  useEffect(() => {
+    const sync = () => {
+      if (!document.hidden) void syncAllReminders().catch(() => undefined);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    const stop = onReminderTap((key) => openLive(key, false));
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      stop();
+    };
+  }, []);
+
   const startSearch = (start: Station, destination: Station, when: When) => {
     setAdvancedOpen(false);
     const usedStart = recordStationUse(start);
@@ -118,32 +168,89 @@ export function App() {
     open("results");
   };
 
+  const sheets = (
+    <>
+      {sheet?.kind === "station" && (
+        <StationSheet
+          stop={sheet.stop}
+          onClose={back}
+          onStart={(station) => {
+            setFrom(station);
+            showToast(`${displayName(station)} ist jetzt der Start`);
+            goHome();
+          }}
+          onDestination={(station) => {
+            setTo(station);
+            showToast(`${displayName(station)} ist jetzt das Ziel`);
+            goHome();
+          }}
+          onFavourite={(station, nowFavourite) => {
+            setStationRevision((revision) => revision + 1);
+            showToast(
+              nowFavourite
+                ? `${displayName(station)} ist jetzt ein Favorit`
+                : `${displayName(station)} ist kein Favorit mehr`,
+            );
+            back();
+          }}
+        />
+      )}
+      {sheet?.kind === "share" && (
+        <ShareSheet
+          from={sheet.from}
+          to={sheet.to}
+          journey={sheet.journey}
+          onClose={back}
+          onDone={(message) => {
+            if (message) showToast(message);
+            back();
+          }}
+        />
+      )}
+      {toast && (
+        <p class="toast" role="status">
+          {toast}
+        </p>
+      )}
+    </>
+  );
+
   if (view === "pick-from" || view === "pick-to") {
     const isStart = view === "pick-from";
     return (
-      <Picker
-        title={isStart ? "Start wählen" : "Ziel wählen"}
-        onClose={back}
-        onPick={(station) => {
-          if (isStart) setFrom(station);
-          else setTo(station);
-          back();
-        }}
-      />
+      <>
+        <Picker
+          title={isStart ? "Start wählen" : "Ziel wählen"}
+          revision={stationRevision}
+          onClose={back}
+          onHold={openStation}
+          onPick={(station) => {
+            if (isStart) setFrom(station);
+            else setTo(station);
+            back();
+          }}
+        />
+        {sheets}
+      </>
     );
   }
 
   if (view === "pick-via") {
     return (
-      <Picker
-        title="Zwischenhalt wählen"
-        stopsOnly
-        onClose={back}
-        onPick={(station) => {
-          setFilters({ ...filters, via: station });
-          back();
-        }}
-      />
+      <>
+        <Picker
+          title="Zwischenhalt wählen"
+          stopsOnly
+          revision={stationRevision}
+          onClose={back}
+          onHold={openStation}
+          onPick={(station) => {
+            setFilters({ ...filters, via: station });
+            back();
+          }}
+        />
+        {sheets}
+      </>
     );
   }
 
@@ -162,10 +269,22 @@ export function App() {
               visible={view === "results"}
               onBack={back}
               onFollow={(key) => openLive(key, true)}
+              onShare={openShare}
+              onStation={openStation}
             />
           </div>
         )}
-        {view === "live" && liveKey && <Live key={liveKey} savedKey={liveKey} onBack={back} />}
+        {view === "live" && liveKey && (
+          <Live
+            key={liveKey}
+            savedKey={liveKey}
+            onBack={back}
+            onShare={openShare}
+            onStation={openStation}
+            onToast={showToast}
+          />
+        )}
+        {sheets}
       </>
     );
   }
@@ -273,12 +392,28 @@ export function App() {
                         {state.headline}
                       </span>
                     </button>
+                    {canRemind() && (
+                      <button
+                        type="button"
+                        class="icon-button"
+                        aria-label={entry.bell ? "Erinnerung ausschalten" : "Erinnerung einschalten"}
+                        aria-pressed={!!entry.bell}
+                        onClick={() => {
+                          setBell(entry, !entry.bell)
+                            .then((result) => showToast(result.text))
+                            .catch(() => showToast("Die Erinnerung ließ sich nicht einrichten."))
+                            .finally(() => setRevision((revision) => revision + 1));
+                        }}
+                      >
+                        <BellIcon on={!!entry.bell} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       class="icon-button"
                       aria-label="Nicht mehr merken"
                       onClick={() => {
-                        removeSaved(entry.key);
+                        forgetSaved(entry.key);
                         setRevision((revision) => revision + 1);
                       }}
                     >
@@ -337,6 +472,7 @@ export function App() {
           </p>
         </footer>
       </div>
+      {sheets}
     </div>
   );
 }

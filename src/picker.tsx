@@ -1,8 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { errorText, searchPlaces } from "./api";
-import { AddressIcon, CloseIcon, PencilIcon, StarIcon, StopIcon, TrashIcon } from "./icons";
+import { errorText, nearbyStops, searchPlaces } from "./api";
+import {
+  AddressIcon,
+  CloseIcon,
+  LocationIcon,
+  NearbyIcon,
+  PencilIcon,
+  StarIcon,
+  StopIcon,
+  TrashIcon,
+} from "./icons";
+import { currentPosition } from "./location";
+import { useLongPress } from "./long-press";
+import { distanceMetres, formatDistance } from "./position";
 import { byUsage, matches } from "./rank";
 import {
+  LOCATION_STATION,
   clearHistory,
   displayName,
   displaySub,
@@ -14,6 +27,7 @@ import {
   toggleFavourite,
   type Station,
 } from "./store";
+import type { StopRef } from "./stops";
 
 const DEBOUNCE_MS = 250;
 const MIN_REMOTE_CHARS = 2;
@@ -28,16 +42,20 @@ function isSamePlace(left: Station, right: Station): boolean {
 
 function Row(props: {
   station: Station;
+  /** Shown beside the place, such as how far away it is. */
+  note?: string;
   onPick: () => void;
   onStar: () => void;
+  onHold: () => void;
   onRename?: () => void;
   onRemove?: () => void;
 }) {
   const { station } = props;
-  const sub = displaySub(station);
+  const sub = [props.note, displaySub(station)].filter(Boolean).join(" · ");
+  const press = useLongPress(props.onHold, props.onPick);
   return (
     <li class="row">
-      <button type="button" class="row-main" onClick={props.onPick}>
+      <button type="button" class="row-main station-button" {...press}>
         <span class="row-icon">{station.addr ? <AddressIcon /> : <StopIcon />}</span>
         <span class="row-text">
           <span class="row-title">{displayName(station)}</span>
@@ -73,6 +91,9 @@ export function Picker(props: {
   stopsOnly?: boolean;
   onClose: () => void;
   onPick: (station: Station) => void;
+  onHold: (stop: StopRef) => void;
+  /** Changes when something else, such as the station menu, changed the stored stations. */
+  revision: number;
 }) {
   const usable = (station: Station) => !props.stopsOnly || (!station.addr && !!station.id);
   const [query, setQuery] = useState("");
@@ -80,12 +101,16 @@ export function Picker(props: {
   const [remote, setRemote] = useState<Station[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [nearby, setNearby] = useState<{ station: Station; metres: number }[]>();
+  const [locating, setLocating] = useState(false);
+  const [nearbyError, setNearbyError] = useState<string>();
   const [renaming, setRenaming] = useState<Station>();
   const [label, setLabel] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const labelInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => input.current?.focus(), []);
+  useEffect(() => setStations(getStations()), [props.revision]);
   useEffect(() => {
     if (renaming) labelInput.current?.focus();
   }, [renaming]);
@@ -139,6 +164,25 @@ export function Picker(props: {
   );
 
   const refresh = () => setStations(getStations());
+  const hold = (station: Station) => props.onHold({ name: station.name, station });
+  const findNearby = async () => {
+    setLocating(true);
+    setNearbyError(undefined);
+    try {
+      const fix = await currentPosition();
+      const places = await nearbyStops(Number(fix.lat.toFixed(6)), Number(fix.lon.toFixed(6)));
+      const found = places
+        .map(stationFromPlace)
+        .map((station) => ({ station, metres: distanceMetres(fix, station) }))
+        .sort((left, right) => left.metres - right.metres);
+      setNearby(found);
+      if (!found.length) setNearbyError("Keine Haltestelle in der Nähe gefunden.");
+    } catch (failure) {
+      setNearbyError(errorText(failure));
+    } finally {
+      setLocating(false);
+    }
+  };
   const star = (station: Station) => {
     toggleFavourite(station);
     refresh();
@@ -177,6 +221,55 @@ export function Picker(props: {
       </div>
 
       <div class="scroll">
+        {!typing && (
+          <ul class="list">
+            {!props.stopsOnly && (
+              <li class="row">
+                <button
+                  type="button"
+                  class="row-main"
+                  onClick={() => props.onPick(LOCATION_STATION)}
+                >
+                  <span class="row-icon row-icon-accent">
+                    <LocationIcon />
+                  </span>
+                  <span class="row-text">
+                    <span class="row-title">Mein Standort</span>
+                    <span class="row-sub">Genau, wird nicht gespeichert</span>
+                  </span>
+                </button>
+              </li>
+            )}
+            <li class="row">
+              <button
+                type="button"
+                class="row-main"
+                disabled={locating}
+                onClick={() => void findNearby()}
+              >
+                <span class="row-icon row-icon-accent">
+                  <NearbyIcon />
+                </span>
+                <span class="row-text">
+                  <span class="row-title">Haltestellen in der Nähe</span>
+                </span>
+              </button>
+              {locating && <span class="spinner row-spinner" role="status" aria-label="Sucht" />}
+            </li>
+            {nearby?.map(({ station, metres }) => (
+              <Row
+                key={`near-${station.key}`}
+                station={station}
+                note={formatDistance(metres)}
+                onPick={() => props.onPick(station)}
+                onHold={() => hold(station)}
+                onStar={() => star(station)}
+              />
+            ))}
+          </ul>
+        )}
+        {!typing && nearbyError && <p class="hint">{nearbyError}</p>}
+
         {!typing && favourites.length > 0 && (
           <ul class="list">
             {favourites.map((station) => (
@@ -184,6 +277,7 @@ export function Picker(props: {
                 key={station.key}
                 station={station}
                 onPick={() => props.onPick(station)}
+                onHold={() => hold(station)}
                 onStar={() => star(station)}
                 onRename={() => startRename(station)}
               />
@@ -213,6 +307,7 @@ export function Picker(props: {
                   key={station.key}
                   station={station}
                   onPick={() => props.onPick(station)}
+                  onHold={() => hold(station)}
                   onStar={() => star(station)}
                   onRemove={() => {
                     removeFromHistory(station);
@@ -226,7 +321,8 @@ export function Picker(props: {
 
         {!typing && !favourites.length && !history.length && (
           <p class="hint">
-            Stationen, die du nutzt, erscheinen hier und beim Tippen sofort ganz oben.
+            Stationen, die du nutzt, erscheinen hier und beim Tippen sofort ganz oben. Lang
+            drücken öffnet mehr Aktionen.
           </p>
         )}
 
@@ -237,6 +333,7 @@ export function Picker(props: {
                 key={station.key}
                 station={station}
                 onPick={() => props.onPick(station)}
+                onHold={() => hold(station)}
                 onStar={() => star(station)}
                 onRename={station.fav ? () => startRename(station) : undefined}
               />
@@ -257,6 +354,7 @@ export function Picker(props: {
                 key={station.key}
                 station={station}
                 onPick={() => props.onPick(station)}
+                onHold={() => hold(station)}
                 onStar={() => star(station)}
               />
             ))}

@@ -44,6 +44,19 @@ describe("mapTrip", () => {
     expect(s[3]).toEqual({ x: 5, g: "3" });
   });
 
+  it("sends coordinates once, rounded, and not with updates", () => {
+    const located: UpstreamTrip = {
+      legs: [
+        {
+          from: { name: "A", scheduledDeparture: at(100), lat: 48.123456, lon: 9.654321 },
+          to: { name: "B", scheduledArrival: at(110), lat: 48.2, lon: 9.7 },
+        },
+      ],
+    };
+    expect(mapTrip(located, 100, 110, false).s[0]).toMatchObject({ la: 48.1235, lo: 9.6543 });
+    expect(mapTrip(located, 100, 110, true).s[0]).toEqual({});
+  });
+
   it("keeps the whole trip when scheduled times no longer match", () => {
     expect(mapTrip(trip, 1, 2, false).s).toHaveLength(4);
   });

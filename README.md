@@ -7,6 +7,8 @@ Schlanke Verbindungsauskunft für Android, nur für Verbindungen mit dem Deutsch
   <img src="docs/stationssuche.png" width="240" alt="Stationssuche mit lokalem Treffer ganz oben">
   <img src="docs/ergebnisse.png" width="240" alt="Ergebnisse mit Verspätungen in Rot und pünktlichen Zeiten in Grün">
   <img src="docs/live.png" width="240" alt="Live-Ansicht einer laufenden Fahrt mit Fortschritt und passierten Halten">
+  <img src="docs/standort.png" width="240" alt="Live-Ansicht mit echtem Standort und Fahrplan-Position in der Haltliste">
+  <img src="docs/teilen.png" width="240" alt="Teilen-Dialog mit Bild und bearbeitbarem Text">
 </p>
 
 ## Installieren
@@ -23,6 +25,10 @@ Die aktuelle APK liegt unter [Releases](https://github.com/ElianDarou/nahfahrt/r
 - **Datum und Uhrzeit:** Suche nach Abfahrt oder Ankunft, dazu frühere und spätere Verbindungen.
 - **Erweiterte Suche (aufklappbar):** Reihenfolge nach Abfahrt, Dauer oder Umstiegen, Zeitfenster für Abfahrt und Ankunft, maximale Umstiege und Reisedauer, Verkehrsmittel, Fußweg, längere Umstiegszeit, Zwischenhalt mit Aufenthalt und stufenfreie Fußwege.
 - **Verbindungen merken und live verfolgen:** Gemerkte Verbindungen stehen auf der Startseite. Die Live-Ansicht zeigt Fortschritt, passierte Halte, den nächsten Halt, Umstiege, Verspätungen und Gleiswechsel. Nach der Ankunft verschwindet die Verbindung von selbst.
+- **Mein Standort:** Der genaue Standort kann der Start oder das Ziel einer Suche sein, dazu gibt es Haltestellen in der Nähe. In der Live-Ansicht zeigt die App auf Wunsch, wo du wirklich bist und wo du laut Fahrplan sein solltest.
+- **Stationen lang drücken:** In der Suche, den Ergebnissen und der Live-Ansicht öffnet langes Drücken „Als Start nehmen“, „Als Ziel nehmen“ und „Zu Favoriten hinzufügen“. In Ergebnissen und Live-Ansicht reicht auch ein Tipp.
+- **Erinnerungen (optional):** Die Glocke an einer gemerkten Verbindung erinnert 10 Minuten vor dem Losgehen und 2 Minuten vor jedem Ausstieg.
+- **Teilen:** Eine Verbindung lässt sich als Bild im Look der App, als bearbeitbarer Text oder als beides teilen.
 
 ## Datenmenge
 
@@ -34,7 +40,8 @@ Die Oberfläche steckt komplett in der App, übers Netz läuft nur die Suche. Da
 | Typische Suche auf Testrouten | etwa 39 KB | 0,3–1 KB |
 | Live-Ansicht: alle Halte einer Fahrt laden | | etwa 0,2 KB je Fahrt |
 | Live-Ansicht: Aktualisierung pro Minute | | etwa 0,05 KB je Fahrt |
-| APK | | etwa 0,8 MB |
+| Haltestellen in der Nähe | | etwa 0,3 KB |
+| APK | | etwa 0,9 MB |
 
 ## Aufbau
 
@@ -46,7 +53,10 @@ lokaler Cache im Gerät      kürzt, filtert, zählt     Fahrplan und Echtzeit
 - `src/`: Oberfläche, lokaler Cache (`store.ts`), Stationsranking (`rank.ts`)
 - `convex/lib/`: Abfragen an Transitous, Filter und Kürzung als reine, getestete Funktionen
 - `src/progress.ts`, `src/saved.ts`: Fortschritt einer Fahrt und gemerkte Verbindungen
-- `convex/http.ts`: Endpunkte `/v1/places`, `/v1/journeys` und `/v1/trip`
+- `src/location.ts`, `src/position.ts`: Standort und Vergleich mit Strecke und Fahrplan
+- `src/reminder-plan.ts`, `src/reminders.ts`: Erinnerungen
+- `src/share-image.ts`, `src/share-text.ts`: Bild und Text zum Teilen
+- `convex/http.ts`: Endpunkte `/v1/places`, `/v1/nearby`, `/v1/journeys` und `/v1/trip`
 - `convex/quota.ts`: Tageslimits für Abfragen an Transitous
 - `android/`: Capacitor-Projekt
 
@@ -63,13 +73,20 @@ Beim Vergleich mit bahn.de (Filter „Nur D-Ticket-Verbindungen“) wurden 39 vo
 - **Einzelne Haltestellennamen** kommen ohne Ort aus den Quelldaten, etwa nur „Hauptbahnhof“.
 - **Ersatzverkehr** erscheint teils anders als bei der Bahn. Solche Fahrten sind in der Detailansicht gekennzeichnet.
 - **Tageslimit:** Das öffentliche Backend erlaubt 700 Verbindungssuchen an Transitous pro Tag, Suchen mit einer Adresse zählen doppelt. Für Live-Abfragen gilt ein eigenes Limit von 20.000.
-- **Live-Position ohne GPS:** Die Position wird aus Fahrplan und Live-Daten geschätzt. Aktualisiert wird nur bei geöffneter App, Benachrichtigungen gibt es nicht.
+- **Live-Position:** Ohne Standort wird sie aus Fahrplan und Live-Daten geschätzt. Mit Standort vergleicht die App mit geraden Linien zwischen den Halten, weil die echte Strecke nicht bekannt ist. Beides läuft nur bei geöffneter App.
+- **Erinnerungen kennen nur den letzten Stand:** Die Zeiten rücken mit Verspätungen mit, aber nur solange die App offen ist oder wieder geöffnet wird. Bei geschlossener App fragt sie nichts ab.
 - **Kein Fahrrad-Filter:** Die Quelldaten kennzeichnen auch Regionalzüge und S-Bahnen als „keine Fahrradmitnahme“. Der Filter fände deshalb praktisch nichts.
 - **Stufenfreie Fußwege** betreffen nur die Wege zu Fuß, nicht den Einstieg ins Fahrzeug.
 
 ## Datenschutz
 
-Stationen, Favoriten und Verlauf bleiben auf dem Gerät. Für eine Suche gehen Suchtext oder Koordinaten über das Convex-Backend an Transitous. Das Backend speichert nur einen Tageszähler. Die App braucht keine Standortfreigabe und kein Konto.
+Stationen, Favoriten und Verlauf bleiben auf dem Gerät. Für eine Suche gehen Suchtext oder Koordinaten über das Convex-Backend an Transitous. Das Backend speichert nur einen Tageszähler. Ein Konto gibt es nicht.
+
+Der Standort ist optional und wird nur bei geöffneter App abgefragt:
+
+- **Gespeichert wird er nicht:** weder in der App noch im Backend. Suchen mit Standort sind zusätzlich vom HTTP-Cache ausgenommen.
+- **In der Live-Ansicht** bleibt er auf dem Gerät, der Vergleich läuft lokal.
+- **Bei „Mein Standort“ und „Haltestellen in der Nähe“** gehen die genauen Koordinaten für diese eine Anfrage über das Backend an Transitous, sonst ließe sich nichts berechnen. Wie Transitous seine Zugriffe protokolliert, liegt außerhalb dieses Projekts.
 
 ## Entwicklung
 

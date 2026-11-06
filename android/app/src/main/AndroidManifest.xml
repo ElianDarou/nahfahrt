@@ -38,4 +38,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Only while the app is open and the user asked for it. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <!-- A reminder for a train is useless when it arrives late. Without this, Android 14+
+         would need a trip to the system settings. Google Play restricts it, GitHub does not. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 </manifest>

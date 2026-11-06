@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapPlaces, type UpstreamMatch } from "../convex/lib/places";
+import { mapNearby, mapPlaces, type UpstreamMatch } from "../convex/lib/places";
 
 const stop = (name: string, lat: number, lon: number, id: string, town?: string): UpstreamMatch => ({
   type: "STOP",
@@ -71,5 +71,15 @@ describe("mapPlaces", () => {
       },
     ]);
     expect(place).toEqual({ n: "Musterstraße 1", s: "Musterstadt", y: 50.1, x: 8.6, a: 1 });
+  });
+});
+
+describe("mapNearby", () => {
+  it("leaves out ride-sharing points", () => {
+    const places = mapNearby([
+      stop("Stuttgart, Olgaeck", 48.77, 9.18, "de-amarillo-bw_1"),
+      stop("Olgaeck", 48.771, 9.181, "de-DELFI_1"),
+    ]);
+    expect(places.map((place) => place.n)).toEqual(["Olgaeck"]);
   });
 });
