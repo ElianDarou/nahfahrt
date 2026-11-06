@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nahfahrt</string>
+    <string name="title_activity_main">Nahfahrt</string>
+    <string name="package_name">io.github.eliandarou.nahfahrt</string>
+    <string name="custom_url_scheme">io.github.eliandarou.nahfahrt</string>
+</resources>

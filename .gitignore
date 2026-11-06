@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env.local
+.env
+*.log
+.DS_Store
+android/keystore.properties
+*.jks
+*.keystore
+scripts/compare-cases.local.json
