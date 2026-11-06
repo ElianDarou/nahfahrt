@@ -69,9 +69,12 @@ function Row(props: {
 
 export function Picker(props: {
   title: string;
+  /** Only stops with an id can be travelled through. */
+  stopsOnly?: boolean;
   onClose: () => void;
   onPick: (station: Station) => void;
 }) {
+  const usable = (station: Station) => !props.stopsOnly || (!station.addr && !!station.id);
   const [query, setQuery] = useState("");
   const [stations, setStations] = useState(getStations);
   const [remote, setRemote] = useState<Station[]>([]);
@@ -124,7 +127,7 @@ export function Picker(props: {
   }, [query]);
 
   const typing = query.trim().length > 0;
-  const sorted = useMemo(() => byUsage(stations), [stations]);
+  const sorted = useMemo(() => byUsage(stations).filter(usable), [stations, props.stopsOnly]);
   const localMatches = useMemo(
     () => sorted.filter((station) => matches(query, station)),
     [sorted, query],
@@ -132,7 +135,7 @@ export function Picker(props: {
   const favourites = sorted.filter((station) => station.fav);
   const history = sorted.filter((station) => !station.fav && station.count > 0);
   const others = remote.filter(
-    (station) => !localMatches.some((local) => isSamePlace(local, station)),
+    (station) => usable(station) && !localMatches.some((local) => isSamePlace(local, station)),
   );
 
   const refresh = () => setStations(getStations());

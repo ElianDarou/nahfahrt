@@ -1,9 +1,11 @@
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import { parseFilters } from "./lib/filters";
 import type { PlaceType } from "./lib/journeys";
 import {
   UpstreamError,
+  followTrip,
   planCallsFor,
   searchJourneys,
   searchPlaces,
@@ -49,12 +51,14 @@ function readSearch(params: URLSearchParams): JourneySearch | null {
   const cursor = params.get("cursor") ?? undefined;
   if (!from || !to || !at || Number.isNaN(Date.parse(at))) return null;
   if (cursor !== undefined && (cursor.length > 200 || !/^[\w|~-]*$/.test(cursor))) return null;
-  return { from, to, at, arriveBy: params.get("arrive") === "1", cursor };
+  const filters = parseFilters(params);
+  if (!filters) return null;
+  return { from, to, at, arriveBy: params.get("arrive") === "1", cursor, filters };
 }
 
 const http = httpRouter();
 
-for (const path of ["/v1/places", "/v1/journeys"]) {
+for (const path of ["/v1/places", "/v1/journeys", "/v1/trip"]) {
   http.route({
     path,
     method: "OPTIONS",
@@ -98,6 +102,33 @@ http.route({
       console.error("journey search failed", error);
       const unknownPlace = error instanceof UpstreamError && error.status === 404;
       return failure(unknownPlace ? "unknown_place" : "upstream", unknownPlace ? 404 : 502);
+    }
+  }),
+});
+
+const TRIP_ID = /^[\w:.|+-]{1,200}$/;
+const MINUTES = /^\d{1,10}$/;
+
+http.route({
+  path: "/v1/trip",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const params = new URL(request.url).searchParams;
+    const id = params.get("id") ?? "";
+    const boardAt = params.get("a") ?? "";
+    const alightAt = params.get("b") ?? "";
+    if (!TRIP_ID.test(id) || !MINUTES.test(boardAt) || !MINUTES.test(alightAt)) {
+      return failure("bad_request", 400);
+    }
+    const allowed = await ctx.runMutation(internal.quota.reserveTripCall, {});
+    if (!allowed) return failure("daily_limit", 429);
+    try {
+      const update = params.get("u") === "1";
+      return json(await followTrip(id, Number(boardAt), Number(alightAt), update), 200, 20);
+    } catch (error) {
+      console.error("trip lookup failed", error);
+      const unknown = error instanceof UpstreamError && error.status === 404;
+      return failure(unknown ? "unknown_trip" : "upstream", unknown ? 404 : 502);
     }
   }),
 });

@@ -16,13 +16,18 @@ import {
   transfers,
   vehicles,
 } from "./format";
-import { BackIcon, ChevronIcon, RefreshIcon } from "./icons";
+import { BackIcon, BookmarkIcon, ChevronIcon, RefreshIcon } from "./icons";
+import { getSaved, removeSaved, saveJourney, savedKey } from "./saved";
 import { displayName, loadJourneys, saveJourneys, type Station } from "./store";
 
 export interface When {
   /** Milliseconds since the epoch; absent means "now". */
   at?: number;
   arriveBy: boolean;
+  /** Query parameters of chosen filters. */
+  filters?: Record<string, string>;
+  /** Replaces the requested time in the header. */
+  label?: string;
 }
 
 /** Live data is not to be expected further ahead than this. */
@@ -112,7 +117,14 @@ function Details({ journey, now }: { journey: Journey; now: number }) {
   );
 }
 
-function Card({ journey, now }: { journey: Journey; now: number }) {
+function Card(props: {
+  journey: Journey;
+  now: number;
+  saved: boolean;
+  onToggleSave: () => void;
+  onFollow: () => void;
+}) {
+  const { journey, now, saved } = props;
   const [open, setOpen] = useState(false);
   const legs = vehicles(journey);
   const first = legs[0];
@@ -128,7 +140,6 @@ function Card({ journey, now }: { journey: Journey; now: number }) {
           <Time scheduled={first.a} delay={first.x} live={!!first.r} />
           <span class="card-dash">–</span>
           <Time scheduled={last.b} delay={last.y} live={!!last.r} />
-          <span class="card-duration">{formatDuration(totalMinutes(journey))}</span>
         </span>
         <span class="card-lines">
           {walkAtStart > 0 && <span class="chip chip-walk">{walkAtStart} Min. zu Fuß</span>}
@@ -138,7 +149,9 @@ function Card({ journey, now }: { journey: Journey; now: number }) {
         </span>
         <span class="card-foot">
           <span>
-            {journey.u === 0 ? "Direkt" : journey.u === 1 ? "1 Umstieg" : `${journey.u} Umstiege`}
+            {formatDuration(totalMinutes(journey))}
+            {" · "}
+            {journey.u === 0 ? "direkt" : journey.u === 1 ? "1 Umstieg" : `${journey.u} Umstiege`}
             {" · ab "}
             {first.f}
             {first.g ? `, Gl. ${first.g}` : ""}
@@ -151,7 +164,25 @@ function Card({ journey, now }: { journey: Journey; now: number }) {
         )}
         {!cancelled && risk === "tight" && <span class="note note-warn">Knapper Umstieg</span>}
       </button>
-      {open && <Details journey={journey} now={now} />}
+      <button
+        type="button"
+        class="icon-button card-save"
+        aria-label={saved ? "Nicht mehr merken" : "Verbindung merken"}
+        aria-pressed={saved}
+        onClick={props.onToggleSave}
+      >
+        <BookmarkIcon filled={saved} />
+      </button>
+      {open && (
+        <>
+          <Details journey={journey} now={now} />
+          <div class="card-actions">
+            <button type="button" class="text-button" onClick={props.onFollow}>
+              Live verfolgen
+            </button>
+          </div>
+        </>
+      )}
     </li>
   );
 }
@@ -175,9 +206,44 @@ export function Results(props: {
   from: Station;
   to: Station;
   when: When;
+  /** False while the live view lies on top. */
+  visible: boolean;
   onBack: () => void;
+  onFollow: (key: string) => void;
 }) {
   const { from, to, when } = props;
+  const [savedKeys, setSavedKeys] = useState(() => new Set(getSaved().map((entry) => entry.key)));
+  const [toast, setToast] = useState<string>();
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const hasFilters = !!when.filters && Object.keys(when.filters).length > 0;
+
+  const refreshSaved = () => setSavedKeys(new Set(getSaved().map((entry) => entry.key)));
+  // The live view can forget a connection while this screen waits beneath it.
+  useEffect(() => {
+    if (props.visible) refreshSaved();
+  }, [props.visible]);
+  const showToast = (text: string) => {
+    setToast(text);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(undefined), 3000);
+  };
+  const toggleSave = (journey: Journey) => {
+    const key = savedKey(journey);
+    if (savedKeys.has(key)) {
+      removeSaved(key);
+      showToast("Nicht mehr gemerkt");
+    } else {
+      saveJourney(displayName(from), displayName(to), journey);
+      showToast("Gemerkt, du findest sie auf der Startseite");
+    }
+    refreshSaved();
+  };
+  const follow = (journey: Journey) => {
+    const key = savedKey(journey);
+    if (!savedKeys.has(key)) saveJourney(displayName(from), displayName(to), journey);
+    refreshSaved();
+    props.onFollow(key);
+  };
   const [journeys, setJourneys] = useState<Journey[]>([]);
   const [earlier, setEarlier] = useState<string>();
   const [later, setLater] = useState<string>();
@@ -198,14 +264,14 @@ export function Results(props: {
     const at = when.at ?? Date.now();
     setNow(Math.floor(Date.now() / 60000));
 
-    searchJourneys({ from, to, at, arriveBy: when.arriveBy }, controller.signal)
+    searchJourneys({ from, to, at, arriveBy: when.arriveBy, filters: when.filters }, controller.signal)
       .then((payload) => {
         setJourneys(payload.j);
         setEarlier(payload.p);
         setLater(payload.n);
         setWalkOnly(payload.w);
         setSavedAt(undefined);
-        if (when.at === undefined) saveJourneys(from, to, payload);
+        if (when.at === undefined && !hasFilters) saveJourneys(from, to, payload);
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) setError(errorText(failure));
@@ -217,7 +283,7 @@ export function Results(props: {
 
   useEffect(() => {
     // Saved results appear at once and stay useful without network.
-    if (when.at === undefined) {
+    if (when.at === undefined && !hasFilters) {
       const cached = loadJourneys(from, to);
       const current = Math.floor(Date.now() / 60000);
       const upcoming = cached?.payload.j.filter(
@@ -244,8 +310,13 @@ export function Results(props: {
         at: when.at ?? Date.now(),
         arriveBy: when.arriveBy,
         cursor,
+        filters: when.filters,
       });
-      setJourneys((known) => sortByDeparture(unique([...known, ...payload.j])));
+      setJourneys((known) =>
+        when.filters?.sort
+          ? unique([...known, ...payload.j])
+          : sortByDeparture(unique([...known, ...payload.j])),
+      );
       if (direction === "earlier") setEarlier(payload.p);
       else setLater(payload.n);
     } catch (failure) {
@@ -255,11 +326,25 @@ export function Results(props: {
     }
   };
 
-  const requestLabel = when.at
+  const baseLabel = when.label
+    ? when.label
+    : when.at
     ? `${when.arriveBy ? "An" : "Ab"} ${formatDay(when.at / 60000)}, ${formatTimeMs(when.at)}`
     : "Ab jetzt";
+  const filterCount = when.filters
+    ? Object.keys(when.filters).filter((key) => !["df", "dt", "af", "al", "vs"].includes(key)).length
+    : 0;
+  const requestLabel =
+    filterCount > 0
+      ? `${baseLabel} · ${filterCount === 1 ? "1 Filter" : `${filterCount} Filter`}`
+      : baseLabel;
 
-  let previousDay = when.at ? dayKey(when.at / 60000) : dayKey(now);
+  let previousDay =
+    when.filters?.df || when.filters?.al
+      ? dayKey(Number(when.filters.df ?? when.filters.al))
+      : when.at
+        ? dayKey(when.at / 60000)
+        : dayKey(now);
 
   return (
     <div class="screen">
@@ -315,7 +400,11 @@ export function Results(props: {
         )}
 
         {!loading && !error && journeys.length === 0 && (
-          <p class="hint">Keine Verbindung mit dem Deutschlandticket gefunden.</p>
+          <p class="hint">
+            {hasFilters
+              ? "Keine Verbindung mit diesen Filtern gefunden. Lockere sie etwas."
+              : "Keine Verbindung mit dem Deutschlandticket gefunden."}
+          </p>
         )}
         {loading && journeys.length === 0 && !error && (
           <ul class="cards" aria-hidden="true">
@@ -340,7 +429,14 @@ export function Results(props: {
                       </li>,
                     ]
                   : []),
-                <Card journey={journey} now={now} key={key} />,
+                <Card
+                  journey={journey}
+                  now={now}
+                  key={key}
+                  saved={savedKeys.has(savedKey(journey))}
+                  onToggleSave={() => toggleSave(journey)}
+                  onFollow={() => follow(journey)}
+                />,
               ];
             })}
           </ul>
@@ -364,6 +460,11 @@ export function Results(props: {
           </p>
         )}
       </div>
+      {toast && (
+        <p class="toast" role="status">
+          {toast}
+        </p>
+      )}
     </div>
   );
 }

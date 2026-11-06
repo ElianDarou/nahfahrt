@@ -6,6 +6,7 @@ Schlanke Verbindungsauskunft für Android, nur für Verbindungen mit dem Deutsch
   <img src="docs/start.png" width="240" alt="Startseite mit Start, Ziel und Zeitpunkt">
   <img src="docs/stationssuche.png" width="240" alt="Stationssuche mit lokalem Treffer ganz oben">
   <img src="docs/ergebnisse.png" width="240" alt="Ergebnisse mit Verspätungen in Rot und pünktlichen Zeiten in Grün">
+  <img src="docs/live.png" width="240" alt="Live-Ansicht einer laufenden Fahrt mit Fortschritt und passierten Halten">
 </p>
 
 ## Installieren
@@ -20,6 +21,8 @@ Die aktuelle APK liegt unter [Releases](https://github.com/ElianDarou/nahfahrt/r
 - **Live-Daten:** Verspätungen, Ausfälle und Gleise, soweit die Verkehrsbetriebe sie liefern. Knappe Umstiege werden markiert.
 - **Offline nutzbar:** Die zuletzt geladenen Verbindungen einer Strecke bleiben ohne Netz sichtbar.
 - **Datum und Uhrzeit:** Suche nach Abfahrt oder Ankunft, dazu frühere und spätere Verbindungen.
+- **Erweiterte Suche (aufklappbar):** Reihenfolge nach Abfahrt, Dauer oder Umstiegen, Zeitfenster für Abfahrt und Ankunft, maximale Umstiege und Reisedauer, Verkehrsmittel, Fußweg, längere Umstiegszeit, Zwischenhalt mit Aufenthalt und stufenfreie Fußwege.
+- **Verbindungen merken und live verfolgen:** Gemerkte Verbindungen stehen auf der Startseite. Die Live-Ansicht zeigt Fortschritt, passierte Halte, den nächsten Halt, Umstiege, Verspätungen und Gleiswechsel. Nach der Ankunft verschwindet die Verbindung von selbst.
 
 ## Datenmenge
 
@@ -29,6 +32,8 @@ Die Oberfläche steckt komplett in der App, übers Netz läuft nur die Suche. Da
 |---|---|---|
 | Größte Testsuche (5 Verbindungen, viele Umstiege) | 101 KB | etwa 0,7 KB |
 | Typische Suche auf Testrouten | etwa 39 KB | 0,3–1 KB |
+| Live-Ansicht: alle Halte einer Fahrt laden | | etwa 0,2 KB je Fahrt |
+| Live-Ansicht: Aktualisierung pro Minute | | etwa 0,05 KB je Fahrt |
 | APK | | etwa 0,8 MB |
 
 ## Aufbau
@@ -40,8 +45,9 @@ lokaler Cache im Gerät      kürzt, filtert, zählt     Fahrplan und Echtzeit
 
 - `src/`: Oberfläche, lokaler Cache (`store.ts`), Stationsranking (`rank.ts`)
 - `convex/lib/`: Abfragen an Transitous, Filter und Kürzung als reine, getestete Funktionen
-- `convex/http.ts`: Endpunkte `/v1/places` und `/v1/journeys`
-- `convex/quota.ts`: Tageslimit für Verbindungssuchen
+- `src/progress.ts`, `src/saved.ts`: Fortschritt einer Fahrt und gemerkte Verbindungen
+- `convex/http.ts`: Endpunkte `/v1/places`, `/v1/journeys` und `/v1/trip`
+- `convex/quota.ts`: Tageslimits für Abfragen an Transitous
 - `android/`: Capacitor-Projekt
 
 ### Warum nicht direkt die Bahn-API?
@@ -56,7 +62,10 @@ Beim Vergleich mit bahn.de (Filter „Nur D-Ticket-Verbindungen“) wurden 39 vo
 - **Live-Daten sind lückenhaft,** vor allem bei Bussen im ländlichen Raum. Ohne Daten zeigt die App die Planzeit und in der Detailansicht „Keine Live-Daten“.
 - **Einzelne Haltestellennamen** kommen ohne Ort aus den Quelldaten, etwa nur „Hauptbahnhof“.
 - **Ersatzverkehr** erscheint teils anders als bei der Bahn. Solche Fahrten sind in der Detailansicht gekennzeichnet.
-- **Tageslimit:** Das öffentliche Backend erlaubt 700 Abfragen an Transitous pro Tag, Suchen mit einer Adresse zählen doppelt.
+- **Tageslimit:** Das öffentliche Backend erlaubt 700 Verbindungssuchen an Transitous pro Tag, Suchen mit einer Adresse zählen doppelt. Für Live-Abfragen gilt ein eigenes Limit von 20.000.
+- **Live-Position ohne GPS:** Die Position wird aus Fahrplan und Live-Daten geschätzt. Aktualisiert wird nur bei geöffneter App, Benachrichtigungen gibt es nicht.
+- **Kein Fahrrad-Filter:** Die Quelldaten kennzeichnen auch Regionalzüge und S-Bahnen als „keine Fahrradmitnahme“. Der Filter fände deshalb praktisch nichts.
+- **Stufenfreie Fußwege** betreffen nur die Wege zu Fuß, nicht den Einstieg ins Fahrzeug.
 
 ## Datenschutz
 
