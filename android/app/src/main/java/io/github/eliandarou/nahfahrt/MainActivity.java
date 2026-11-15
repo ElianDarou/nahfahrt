@@ -4,6 +4,7 @@ import android.content.res.Configuration;
 import android.os.Bundle;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -34,8 +35,14 @@ public class MainActivity extends BridgeActivity {
         paintWindow();
     }
 
-    /** Older WebViews leave the system bars to the window, which must match the app. */
+    /**
+     * Older WebViews leave the system bars to the window, which must match the app. The WebView
+     * itself starts in the app's colour too, instead of white until the first page frame.
+     */
     private void paintWindow() {
         getWindow().setBackgroundDrawableResource(R.color.app_background);
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().setBackgroundColor(ContextCompat.getColor(this, R.color.app_background));
+        }
     }
 }

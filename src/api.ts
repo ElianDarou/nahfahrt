@@ -1,6 +1,7 @@
 import type { JourneysPayload } from "../convex/lib/journeys";
 import type { Place } from "../convex/lib/places";
 import type { TripPayload } from "../convex/lib/trip";
+import { logFetch } from "./perf";
 import type { Station } from "./store";
 
 const BASE = (import.meta.env.VITE_CONVEX_SITE_URL as string).replace(/\/$/, "");
@@ -21,13 +22,16 @@ async function get<T>(
   const timeout = AbortSignal.timeout(TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   let response: Response;
+  const started = performance.now();
   try {
     response = await fetch(`${BASE}${path}?${new URLSearchParams(query)}`, { ...options, signal: combined });
   } catch (error) {
+    logFetch(path, started);
     if (signal?.aborted) throw error;
     throw new ApiError(timeout.aborted ? "timeout" : "offline");
   }
   const body = (await response.json().catch(() => ({}))) as T & { e?: string };
+  logFetch(path, started, response);
   if (!response.ok) throw new ApiError(body.e ?? "upstream");
   return body;
 }

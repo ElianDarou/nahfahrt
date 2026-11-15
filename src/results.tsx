@@ -18,6 +18,8 @@ import {
 } from "./format";
 import { BackIcon, BookmarkIcon, ChevronIcon, RefreshIcon, ShareIcon } from "./icons";
 import { withPosition } from "./location";
+import { useDelayed } from "./delayed";
+import { mark } from "./perf";
 import { forgetSaved } from "./reminders";
 import { getSaved, saveJourney, savedKey } from "./saved";
 import { StationButton } from "./station-sheet";
@@ -278,6 +280,7 @@ export function Results(props: {
   const [savedAt, setSavedAt] = useState<number>();
   const [now, setNow] = useState(() => Math.floor(Date.now() / 60000));
   const requestRef = useRef<AbortController | undefined>(undefined);
+  const slow = useDelayed(loading);
 
   const load = useCallback(() => {
     requestRef.current?.abort();
@@ -302,6 +305,7 @@ export function Results(props: {
         setLater(payload.n);
         setWalkOnly(payload.w);
         setSavedAt(undefined);
+        mark("journeys-shown", { n: payload.j.length });
         if (when.at === undefined && !hasFilters) saveJourneys(from, to, payload);
       })
       .catch((failure: unknown) => {
@@ -323,6 +327,7 @@ export function Results(props: {
       if (cached && upcoming?.length) {
         setJourneys(upcoming);
         setSavedAt(cached.savedAt);
+        mark("journeys-cache-shown", { n: upcoming.length });
       }
     }
     load();
@@ -397,7 +402,7 @@ export function Results(props: {
           disabled={loading}
           onClick={load}
         >
-          {loading ? <span class="spinner" role="status" aria-label="Lädt" /> : <RefreshIcon />}
+          {slow ? <span class="spinner" role="status" aria-label="Lädt" /> : <RefreshIcon />}
         </button>
       </header>
 

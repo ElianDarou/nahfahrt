@@ -246,21 +246,37 @@ function draw(
 
 const cardHeights = new WeakMap<HTMLCanvasElement, number>();
 
-/** A picture of the connection in the app's look, as a PNG data URL. */
-export function renderShareImage(from: string, to: string, journey: Journey): string {
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("no canvas");
-  const colours = palette();
-  const takenAt = Date.now();
-
+/** Size of the picture in CSS pixels, measured by drawing it once on a tiny canvas. */
+function layout(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, colours: Palette,
+  from: string, to: string, journey: Journey, takenAt: number): number {
   canvas.width = WIDTH;
   canvas.height = 10;
-  const height = draw(ctx, colours, from, to, journey, takenAt);
+  return draw(ctx, colours, from, to, journey, takenAt);
+}
 
-  canvas.width = Math.ceil(WIDTH * SCALE);
-  canvas.height = Math.ceil(height * SCALE);
-  ctx.scale(SCALE, SCALE);
+/**
+ * Draws the picture of the connection into a canvas at the given pixel scale.
+ * The preview uses the screen's scale; the shared file uses SCALE.
+ */
+export function drawShareImage(canvas: HTMLCanvasElement, from: string, to: string, journey: Journey,
+  scale: number, takenAt = Date.now()): { width: number; height: number } {
+  // Drawn by the CPU: a one-off picture must not hold up the GPU thread that shows the app.
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("no canvas");
+  const colours = palette();
+  const height = layout(canvas, ctx, colours, from, to, journey, takenAt);
+  canvas.width = Math.ceil(WIDTH * scale);
+  canvas.height = Math.ceil(height * scale);
+  ctx.scale(scale, scale);
   draw(ctx, colours, from, to, journey, takenAt);
-  return canvas.toDataURL("image/png");
+  return { width: WIDTH, height };
+}
+
+/** The shared file: the picture at full resolution as PNG, encoded off the main thread. */
+export function renderShareImage(from: string, to: string, journey: Journey, takenAt?: number): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  drawShareImage(canvas, from, to, journey, SCALE, takenAt);
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("no image"))), "image/png"),
+  );
 }

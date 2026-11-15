@@ -46,9 +46,12 @@ interface CachedJourneys {
 const STATIONS = "nf.stations.v1";
 const ROUTES = "nf.routes.v1";
 const JOURNEYS = "nf.journeys.v1";
+const PLACES = "nf.places.v1";
 const MAX_STATIONS = 200;
 const MAX_ROUTES = 30;
 const MAX_CACHED_JOURNEYS = 10;
+const MAX_CACHED_PLACES = 80;
+const PLACES_MAX_AGE_MS = 30 * 86_400_000;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -211,4 +214,55 @@ export function loadJourneys(
   return read<CachedJourneys[]>(JOURNEYS, []).find(
     (entry) => entry.from === from.key && entry.to === to.key,
   );
+}
+
+interface CachedPlaces {
+  q: string;
+  t: number;
+  r: Place[];
+}
+
+let placeCache: Map<string, CachedPlaces> | undefined;
+
+function placeEntries(): Map<string, CachedPlaces> {
+  if (!placeCache) {
+    const now = Date.now();
+    placeCache = new Map(
+      read<CachedPlaces[]>(PLACES, [])
+        .filter((entry) => now - entry.t < PLACES_MAX_AGE_MS)
+        .map((entry) => [entry.q, entry]),
+    );
+  }
+  return placeCache;
+}
+
+const placeQuery = (text: string): string => text.trim().toLocaleLowerCase("de");
+
+/**
+ * Answers of earlier searches. Stop searches stay on the device for a month, so a repeated
+ * search needs no request; searches with digits (addresses) only for this session.
+ */
+export function cachedPlaces(text: string): Place[] | undefined {
+  return placeEntries().get(placeQuery(text))?.r;
+}
+
+/** The answer for the longest earlier search that the text starts with, if any. */
+export function cachedPlacesForPrefix(text: string): Place[] | undefined {
+  const query = placeQuery(text);
+  let best: CachedPlaces | undefined;
+  for (const entry of placeEntries().values()) {
+    if (query.startsWith(entry.q) && entry.q.length >= 2 && (!best || entry.q.length > best.q.length)) best = entry;
+  }
+  return best?.r;
+}
+
+/** Every answer stays for this session; only stop searches (no digits) are written to the device. */
+export function storePlaces(text: string, places: Place[]): void {
+  const query = placeQuery(text);
+  const entries = placeEntries();
+  entries.delete(query);
+  entries.set(query, { q: query, t: Date.now(), r: places });
+  if (/\d/.test(query)) return;
+  const kept = [...entries.values()].filter((entry) => !/\d/.test(entry.q)).slice(-MAX_CACHED_PLACES);
+  write(PLACES, kept);
 }
