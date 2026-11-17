@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Journey, TransitLeg } from "../convex/lib/journeys";
 import { activeFilterCount, defaultFilters, filterProblem, filtersToQuery } from "../src/filters";
 import { applyTrip, hasCoordinates, isExpired, vehiclesToFollow, type SavedJourney } from "../src/saved";
@@ -97,6 +97,44 @@ describe("vehiclesToFollow", () => {
     expect(vehiclesToFollow(journey, 950)).toEqual([0, 1]);
     expect(vehiclesToFollow(journey, 1040)).toEqual([1]);
     expect(vehiclesToFollow(journey, 1070)).toEqual([]);
+  });
+});
+
+describe("saved journeys on the device", () => {
+  // Nach dem ersten Zugriff kommt die Liste aus dem Speicher; nur die Schreibwege des Moduls pflegen sie nach.
+  async function freshSaved() {
+    const memory = new Map<string, string>();
+    globalThis.localStorage = {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => void memory.set(key, value),
+      removeItem: (key: string) => void memory.delete(key),
+      clear: () => memory.clear(),
+      key: () => null,
+      length: 0,
+    } as Storage;
+    vi.resetModules();
+    return { memory, saved: await import("../src/saved") };
+  }
+
+  it("parses the list only on first access", async () => {
+    const { saved } = await freshSaved();
+    saved.saveJourney("A", "C", journey);
+    const read = vi.spyOn(globalThis.localStorage, "getItem");
+    expect(saved.getSaved(1000)).toHaveLength(1);
+    expect(saved.getSaved(1000)).toHaveLength(1);
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+  });
+
+  it("forgets expired journeys and keeps the shortened list cached", async () => {
+    const { memory, saved } = await freshSaved();
+    saved.saveJourney("A", "C", journey);
+    expect(saved.getSaved(2000)).toEqual([]);
+    expect(memory.get("nf.saved.v1")).toBe("[]");
+    const read = vi.spyOn(globalThis.localStorage, "getItem");
+    expect(saved.getSaved(2000)).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
   });
 });
 

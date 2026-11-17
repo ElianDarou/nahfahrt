@@ -24,16 +24,23 @@ const MAX_SAVED = 30;
 export const isExpired = (entry: Pick<SavedJourney, "journey">, nowMinutes: number): boolean =>
   journeyEnd(entry.journey) + EXPIRY_GRACE_MINUTES < nowMinutes;
 
+/** Einmal gelesen, bleibt die Liste im Speicher; jeder Schreibvorgang hier pflegt sie nach. */
+let savedCache: SavedJourney[] | undefined;
+
 function readAll(): SavedJourney[] {
-  try {
-    const raw = localStorage.getItem(SAVED);
-    return raw ? (JSON.parse(raw) as SavedJourney[]) : [];
-  } catch {
-    return [];
+  if (!savedCache) {
+    try {
+      const raw = localStorage.getItem(SAVED);
+      savedCache = raw ? (JSON.parse(raw) as SavedJourney[]) : [];
+    } catch {
+      savedCache = [];
+    }
   }
+  return savedCache;
 }
 
 function writeAll(entries: SavedJourney[]): void {
+  savedCache = entries;
   try {
     localStorage.setItem(SAVED, JSON.stringify(entries));
   } catch {
@@ -46,7 +53,8 @@ export function getSaved(now = Date.now() / 60000): SavedJourney[] {
   const all = readAll();
   const current = all.filter((entry) => !isExpired(entry, now));
   if (current.length !== all.length) writeAll(current);
-  return current.sort((left, right) => journeyEnd(left.journey) - journeyEnd(right.journey));
+  // filter() liefert bereits eine neue Liste; das Sortieren bleibt trotzdem auf der Kopie.
+  return [...current].sort((left, right) => journeyEnd(left.journey) - journeyEnd(right.journey));
 }
 
 export const findSaved = (key: string): SavedJourney | undefined =>

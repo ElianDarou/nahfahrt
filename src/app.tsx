@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { AdvancedSearch } from "./advanced";
+import { prefetchJourneys } from "./api";
 import {
+  activeFilterCount,
   defaultFilters,
   filterProblem,
   filtersToQuery,
@@ -10,14 +11,13 @@ import {
 } from "./filters";
 import type { Journey } from "../convex/lib/journeys";
 import { formatDay, formatTime, vehicles } from "./format";
-import { BellIcon, CloseIcon, SwapIcon } from "./icons";
-import { Live } from "./live";
+import { BellIcon, ChevronIcon, CloseIcon, SwapIcon } from "./icons";
+import { useModule } from "./lazy";
 import { Picker } from "./picker";
 import { journeyStart, progressOf } from "./progress";
 import { Results, type When } from "./results";
 import { canRemind, forgetSaved, onReminderTap, setBell, syncAllReminders } from "./reminders";
 import { getSaved } from "./saved";
-import { ShareSheet } from "./share-sheet";
 import { StationSheet } from "./station-sheet";
 import {
   displayName,
@@ -86,6 +86,12 @@ export function App() {
   const [toast, setToast] = useState<string>();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  // Screens that are not on the start page are loaded on demand; the warm-up in main.tsx
+  // fills the cache while the app is idle, so opening them stays a single frame.
+  const live = useModule("live", () => import("./live"), view === "live" && !!liveKey);
+  const share = useModule("share", () => import("./share-sheet"), sheet?.kind === "share");
+  const advanced = useModule("advanced", () => import("./advanced"), advancedOpen);
+
   // Keeps the status of saved connections current without any network use.
   useEffect(() => {
     if (view !== "home") return;
@@ -143,6 +149,23 @@ export function App() {
     open("live");
   };
 
+  const LiveView = live?.Live;
+  const ShareSheet = share?.ShareSheet;
+  const AdvancedSearch = advanced?.AdvancedSearch;
+
+  // The search starts when the destination is picked, not when the button is pressed: at that
+  // point the answer needs ~250 ms, while the finger usually takes longer to reach the button.
+  // Only the plain "now" case, because a changed time or filter would make it a wasted request.
+  useEffect(() => {
+    if (view !== "home" || !from || !to || from.key === to.key) return;
+    if (whenMode !== "now" || hasTimeWindow(filters) || filterProblem(filters)) return;
+    if (document.hidden) return;
+    const timer = setTimeout(() => {
+      prefetchJourneys({ from, to, at: Date.now(), arriveBy: false, filters: filtersToQuery(filters) });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [view, from, to, whenMode, filters]);
+
   // Reminders move along when the app comes back, and lead back to their connection.
   useEffect(() => {
     const sync = () => {
@@ -195,7 +218,7 @@ export function App() {
           }}
         />
       )}
-      {sheet?.kind === "share" && (
+      {sheet?.kind === "share" && ShareSheet && (
         <ShareSheet
           from={sheet.from}
           to={sheet.to}
@@ -274,8 +297,8 @@ export function App() {
             />
           </div>
         )}
-        {view === "live" && liveKey && (
-          <Live
+        {view === "live" && liveKey && LiveView && (
+          <LiveView
             key={liveKey}
             savedKey={liveKey}
             onBack={back}
@@ -349,13 +372,33 @@ export function App() {
             />
           )}
 
-          <AdvancedSearch
-            open={advancedOpen}
-            onToggle={() => setAdvancedOpen(!advancedOpen)}
-            filters={filters}
-            onChange={setFilters}
-            onPickVia={() => open("pick-via")}
-          />
+          {AdvancedSearch ? (
+            <AdvancedSearch
+              open={advancedOpen}
+              onToggle={() => setAdvancedOpen(!advancedOpen)}
+              filters={filters}
+              onChange={setFilters}
+              onPickVia={() => open("pick-via")}
+            />
+          ) : (
+            // Looks exactly like the loaded row, so nothing moves when the file arrives.
+            <div class="advanced">
+              <button
+                type="button"
+                class="advanced-toggle"
+                aria-expanded={advancedOpen}
+                onClick={() => setAdvancedOpen(!advancedOpen)}
+              >
+                <span>
+                  Erweiterte Suche
+                  {activeFilterCount(filters) > 0 && (
+                    <span class="badge">{activeFilterCount(filters)}</span>
+                  )}
+                </span>
+                <ChevronIcon open={advancedOpen} />
+              </button>
+            </div>
+          )}
 
           <button
             type="button"

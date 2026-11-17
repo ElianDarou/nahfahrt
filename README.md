@@ -121,6 +121,10 @@ python3 scripts/bench/emanalyze.py bench.json [alt.json]
 
 Ein Emulator mit Software-Grafik (SwiftShader) braucht für jedes Bild einer WebView etwa 65 ms. Werte unter diesem Sockel sind dort nicht möglich; auf echten Handys mit GPU liegt er bei wenigen Millisekunden.
 
+### Weitere Optimierungen
+
+Was noch offen ist, mit Messwerten und Aufwand – inklusive der Frage eines Kotlin-Rewrites – steht in [docs/optimierungen.md](docs/optimierungen.md).
+
 ### Release bauen
 
 Die Signaturdaten liegen außerhalb des Repos in `android/keystore.properties`:
