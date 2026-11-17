@@ -917,6 +917,8 @@ p {
   font-size: 14px;
   font-weight: 600;
   transform: translateX(-50%);
+  /* Its own layer: appearing and disappearing repaints only the toast itself. */
+  will-change: transform;
 }
 
 .status {
@@ -1238,6 +1240,10 @@ button.detail-name {
   height: auto;
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+
+.share-image[hidden] {
+  display: none;
 }
 
 .share-text {

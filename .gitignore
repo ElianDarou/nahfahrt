@@ -8,3 +8,8 @@ android/keystore.properties
 *.jks
 *.keystore
 scripts/compare-cases.local.json
+
+# Benchmark fixtures and browser profile
+scripts/bench/.cache/
+dist-bench/
+__pycache__/

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { TransitLeg } from "../convex/lib/journeys";
 import type { TripStop } from "../convex/lib/trip";
 import { ApiError, errorText, followTrip } from "./api";
+import { useDelayed } from "./delayed";
+import { mark } from "./perf";
 import {
   actualArrival,
   actualDeparture,
@@ -289,6 +291,7 @@ export function Live(props: {
   const [entry, setEntry] = useState<SavedJourney | undefined>(() => findSaved(props.savedKey));
   const [now, setNow] = useState(() => Date.now() / 60000);
   const [loading, setLoading] = useState(false);
+  const slow = useDelayed(loading);
   const [error, setError] = useState<string>();
   const entryRef = useRef(entry);
   const running = useRef(false);
@@ -326,6 +329,7 @@ export function Live(props: {
       working = entryRef.current?.bell ? { ...rest, bell: 1 } : rest;
       entryRef.current = working;
       setEntry(working);
+      mark("trip-shown", { legs: indexes.length });
       storeSaved(working);
       void syncReminders(working).catch(() => undefined);
     } catch (failure) {
@@ -468,7 +472,7 @@ export function Live(props: {
           disabled={loading}
           onClick={loadAll}
         >
-          {loading ? <span class="spinner" role="status" aria-label="Lädt" /> : <RefreshIcon />}
+          {slow ? <span class="spinner" role="status" aria-label="Lädt" /> : <RefreshIcon />}
         </button>
       </header>
 

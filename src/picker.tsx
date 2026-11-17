@@ -12,10 +12,14 @@ import {
 } from "./icons";
 import { currentPosition } from "./location";
 import { useLongPress } from "./long-press";
+import { useDelayed } from "./delayed";
+import { mark } from "./perf";
 import { distanceMetres, formatDistance } from "./position";
 import { byUsage, matches } from "./rank";
 import {
   LOCATION_STATION,
+  cachedPlaces,
+  cachedPlacesForPrefix,
   clearHistory,
   displayName,
   displaySub,
@@ -24,6 +28,7 @@ import {
   removeFromHistory,
   renameStation,
   stationFromPlace,
+  storePlaces,
   toggleFavourite,
   type Station,
 } from "./store";
@@ -31,8 +36,6 @@ import type { StopRef } from "./stops";
 
 const DEBOUNCE_MS = 250;
 const MIN_REMOTE_CHARS = 2;
-/** Results for this session, so that correcting a typo costs no data. */
-const sessionResults = new Map<string, Station[]>();
 
 function isSamePlace(left: Station, right: Station): boolean {
   if (left.key === right.key || (left.id && left.id === right.id)) return true;
@@ -123,20 +126,26 @@ export function Picker(props: {
       setLoading(false);
       return;
     }
-    const known = sessionResults.get(text.toLocaleLowerCase("de"));
+    // An earlier answer for exactly this text: no request, no waiting.
+    const known = cachedPlaces(text);
     if (known) {
-      setRemote(known);
+      setRemote(known.map(stationFromPlace));
       setLoading(false);
+      mark("places-shown", { q: text, cached: true });
       return;
     }
+    // Meanwhile, what an earlier, shorter search found and still fits the text.
+    const earlier = cachedPlacesForPrefix(text);
+    const fits = (station: Station) => matches(text, station);
+    setRemote((current) => (earlier ? earlier.map(stationFromPlace) : current).filter(fits));
     setLoading(true);
     const controller = new AbortController();
     const timer = setTimeout(() => {
       searchPlaces(text, regionHint(), controller.signal)
         .then((places) => {
-          const results = places.map(stationFromPlace);
-          sessionResults.set(text.toLocaleLowerCase("de"), results);
-          setRemote(results);
+          storePlaces(text, places);
+          setRemote(places.map(stationFromPlace));
+          mark("places-shown", { q: text, cached: false });
         })
         .catch((failure: unknown) => {
           if (!controller.signal.aborted) setError(errorText(failure));
@@ -152,6 +161,7 @@ export function Picker(props: {
   }, [query]);
 
   const typing = query.trim().length > 0;
+  const slow = useDelayed(loading);
   const sorted = useMemo(() => byUsage(stations).filter(usable), [stations, props.stopsOnly]);
   const localMatches = useMemo(
     () => sorted.filter((station) => matches(query, station)),
@@ -341,10 +351,10 @@ export function Picker(props: {
           </ul>
         )}
 
-        {typing && (others.length > 0 || loading) && (
+        {typing && (others.length > 0 || slow) && (
           <div class="section-head">
             <h2>Weitere Ergebnisse</h2>
-            {loading && <span class="spinner" role="status" aria-label="Lädt" />}
+            {slow && <span class="spinner" role="status" aria-label="Lädt" />}
           </div>
         )}
         {typing && others.length > 0 && (

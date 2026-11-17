@@ -80,7 +80,7 @@ Beim Vergleich mit bahn.de (Filter „Nur D-Ticket-Verbindungen“) wurden 39 vo
 
 ## Datenschutz
 
-Stationen, Favoriten und Verlauf bleiben auf dem Gerät. Für eine Suche gehen Suchtext oder Koordinaten über das Convex-Backend an Transitous. Das Backend speichert nur einen Tageszähler. Ein Konto gibt es nicht.
+Stationen, Favoriten und Verlauf bleiben auf dem Gerät. Antworten auf Haltestellensuchen ohne Ziffern bleiben dort bis zu 30 Tage, damit eine wiederholte Suche keine Daten braucht; Adresssuchen nur bis die App geschlossen wird. Für eine Suche gehen Suchtext oder Koordinaten über das Convex-Backend an Transitous. Das Backend speichert nur einen Tageszähler. Ein Konto gibt es nicht.
 
 Der Standort ist optional und wird nur bei geöffneter App abgefragt:
 
@@ -101,6 +101,25 @@ API_URL=https://<deployment>.convex.site npm run compare   # Vergleich mit bahn.
 ```
 
 `.env.production` enthält die Adresse des öffentlichen Backends. Für einen eigenen Betrieb bitte eine eigene Convex-Instanz eintragen.
+
+### Leistung messen
+
+Ein Bench-Build misst jede Interaktion in der App selbst: vom Zeitstempel der Eingabe bis zum Bild, das sie zeigt. Er schreibt dazu Zeilen `NFPERF {…}` in die Konsole. Normale Builds enthalten davon nichts.
+
+```bash
+VITE_BENCH=1 NF_BENCH=1 ./scripts/build-android.sh      # Bench-APK, gibt die Konsole an logcat weiter
+python3 scripts/bench/embench.py bench.json 5           # alle Interaktionen, 5 Runden, per adb
+python3 scripts/bench/emanalyze.py bench.json [alt.json]
+```
+
+- **Anzeige:** Event-Timing-Dauer des Browsers, also Eingabe bis zum Bild auf dem Schirm (wie INP). Das ist der Hauptwert.
+- **App:** Eingabe bis zum fertig berechneten Bild, ohne Rasterung und Anzeige.
+- **Netz:** Marken wie `journeys-shown` oder `places-shown` ab der auslösenden Eingabe.
+- **Bytes:** Alles, was die App pro Schritt sendet und empfängt, aus den Zählern pro App von Android.
+
+`scripts/bench/host-bench.mjs` spielt dieselben Abläufe ohne Netz in einem gedrosselten Chromium durch. Damit lässt sich die Rechenzeit der App schnell vergleichen.
+
+Ein Emulator mit Software-Grafik (SwiftShader) braucht für jedes Bild einer WebView etwa 65 ms. Werte unter diesem Sockel sind dort nicht möglich; auf echten Handys mit GPU liegt er bei wenigen Millisekunden.
 
 ### Release bauen
 

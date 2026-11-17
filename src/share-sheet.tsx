@@ -1,20 +1,32 @@
 import { Capacitor } from "@capacitor/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Journey } from "../convex/lib/journeys";
-import { renderShareImage } from "./share-image";
+import { mark } from "./perf";
+import { drawShareImage, renderShareImage } from "./share-image";
 import { shareText } from "./share-text";
 
 const FILE_NAME = "nahfahrt-verbindung.png";
 
-async function sendNative(image: string | undefined, text: string | undefined): Promise<void> {
+const base64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result);
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
+async function sendNative(image: Blob | undefined, text: string | undefined): Promise<void> {
   let files: string[] | undefined;
   if (image) {
     // Always the same file in the cache, so old pictures don't pile up.
     const { uri } = await Filesystem.writeFile({
       path: FILE_NAME,
-      data: image.slice(image.indexOf(",") + 1),
+      data: await base64(image),
       directory: Directory.Cache,
     });
     files = [uri];
@@ -22,10 +34,8 @@ async function sendNative(image: string | undefined, text: string | undefined): 
   await Share.share({ text, files, dialogTitle: "Verbindung teilen" });
 }
 
-async function sendWeb(image: string | undefined, text: string | undefined): Promise<void> {
-  const files = image
-    ? [new File([await (await fetch(image)).blob()], FILE_NAME, { type: "image/png" })]
-    : undefined;
+async function sendWeb(image: Blob | undefined, text: string | undefined): Promise<void> {
+  const files = image ? [new File([image], FILE_NAME, { type: "image/png" })] : undefined;
   if (navigator.share) await navigator.share({ text, files });
   else if (text) await navigator.clipboard.writeText(text);
 }
@@ -40,25 +50,44 @@ export function ShareSheet(props: {
   const [withImage, setWithImage] = useState(true);
   const [withText, setWithText] = useState(true);
   const [text, setText] = useState(() => shareText(props.from, props.to, props.journey));
-  const [image, setImage] = useState<string>();
+  const [image, setImage] = useState(false);
   const [sending, setSending] = useState(false);
+  const preview = useRef<HTMLCanvasElement>(null);
+  // One moment for preview and file, so both show the same "Stand".
+  const [takenAt] = useState(Date.now);
 
+  // The sheet appears first; the preview is drawn right after, at screen resolution.
   useEffect(() => {
-    try {
-      setImage(renderShareImage(props.from, props.to, props.journey));
-    } catch {
-      // Without a picture, text still works.
-      setWithImage(false);
-    }
-  }, [props.from, props.to, props.journey]);
+    let cancelled = false;
+    const frame = requestAnimationFrame(() =>
+      setTimeout(() => {
+        if (cancelled || !preview.current) return;
+        try {
+          drawShareImage(preview.current, props.from, props.to, props.journey, devicePixelRatio || 1, takenAt);
+          setImage(true);
+          mark("share-image-ready");
+        } catch {
+          // Without a picture, text still works.
+          setWithImage(false);
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [props.from, props.to, props.journey, takenAt]);
 
-  const canSend = (withImage && !!image) || (withText && !!text.trim());
+  const canSend = (withImage && image) || (withText && !!text.trim());
 
   const send = async () => {
     setSending(true);
-    const shownImage = withImage ? image : undefined;
     const shownText = withText && text.trim() ? text.trim() : undefined;
     try {
+      // The full-resolution file is only made when it is really shared.
+      const shownImage = withImage && image
+        ? await renderShareImage(props.from, props.to, props.journey, takenAt)
+        : undefined;
       await (Capacitor.isNativePlatform() ? sendNative : sendWeb)(shownImage, shownText);
       props.onDone();
     } catch (failure) {
@@ -96,9 +125,13 @@ export function ShareSheet(props: {
           </button>
         </div>
         <div class="share-scroll">
-          {withImage && image && (
-            <img class="share-image" src={image} alt="Vorschau des Bildes dieser Verbindung" />
-          )}
+          <canvas
+            ref={preview}
+            class="share-image"
+            hidden={!image || !withImage}
+            role="img"
+            aria-label="Vorschau des Bildes dieser Verbindung"
+          />
           {withText && (
             <textarea
               class="share-text"
