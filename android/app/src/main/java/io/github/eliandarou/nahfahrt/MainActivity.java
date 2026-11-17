@@ -5,13 +5,18 @@ import android.os.Bundle;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.content.ContextCompat;
+import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Keeps the launch screen up until the first frame is drawn, then hands over without
+        // the system's icon animation, which would cost several frames before the app shows.
+        SplashScreen splash = SplashScreen.installSplashScreen(this);
         super.onCreate(savedInstanceState);
+        splash.setOnExitAnimationListener(splashScreenView -> splashScreenView.remove());
         paintWindow();
 
         // The app's screens live in the WebView history, so the back button walks through them.

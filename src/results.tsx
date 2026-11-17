@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { Journey, TransitLeg } from "../convex/lib/journeys";
-import { errorText, searchJourneys } from "./api";
+import { errorText, peekJourneys, searchJourneys } from "./api";
 import {
   actualDeparture,
   dayKey,
@@ -20,6 +20,7 @@ import { BackIcon, BookmarkIcon, ChevronIcon, RefreshIcon, ShareIcon } from "./i
 import { withPosition } from "./location";
 import { useDelayed } from "./delayed";
 import { mark } from "./perf";
+import { prefetchTripData } from "./prefetch";
 import { forgetSaved } from "./reminders";
 import { getSaved, saveJourney, savedKey } from "./saved";
 import { StationButton } from "./station-sheet";
@@ -270,11 +271,18 @@ export function Results(props: {
     refreshSaved();
     props.onFollow(key);
   };
-  const [journeys, setJourneys] = useState<Journey[]>([]);
-  const [earlier, setEarlier] = useState<string>();
-  const [later, setLater] = useState<string>();
-  const [walkOnly, setWalkOnly] = useState<number>();
-  const [loading, setLoading] = useState(true);
+  // A search that was started when the destination was picked is usually ready by now.
+  // Taking it here, in the first render, means the results are part of the frame the tap
+  // produces instead of one round trip later.
+  const [prefetched] = useState(() =>
+    peekJourneys({ from, to, at: when.at ?? Date.now(), arriveBy: when.arriveBy, filters: when.filters }),
+  );
+  const consumed = useRef(false);
+  const [journeys, setJourneys] = useState<Journey[]>(prefetched?.j ?? []);
+  const [earlier, setEarlier] = useState<string | undefined>(prefetched?.p);
+  const [later, setLater] = useState<string | undefined>(prefetched?.n);
+  const [walkOnly, setWalkOnly] = useState<number | undefined>(prefetched?.w);
+  const [loading, setLoading] = useState(!prefetched);
   const [paging, setPaging] = useState(false);
   const [error, setError] = useState<string>();
   const [savedAt, setSavedAt] = useState<number>();
@@ -317,6 +325,12 @@ export function Results(props: {
   }, [from, to, when]);
 
   useEffect(() => {
+    // The prefetched answer is already on screen; asking again would only cost a request.
+    if (prefetched && !consumed.current) {
+      consumed.current = true;
+      mark("journeys-shown", { n: prefetched.j.length, prefetched: true });
+      return;
+    }
     // Saved results appear at once and stay useful without network.
     if (when.at === undefined && !hasFilters) {
       const cached = loadJourneys(from, to);
@@ -333,6 +347,13 @@ export function Results(props: {
     load();
     return () => requestRef.current?.abort();
   }, [load, from, to, when.at]);
+
+  // Opening the first connection should not wait for its stops either.
+  useEffect(() => {
+    if (loading || !journeys.length) return;
+    const timer = setTimeout(() => prefetchTripData(journeys[0]), 600);
+    return () => clearTimeout(timer);
+  }, [loading, journeys]);
 
   const page = async (direction: "earlier" | "later") => {
     const cursor = direction === "earlier" ? earlier : later;

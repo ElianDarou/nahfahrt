@@ -10,8 +10,34 @@
       content="default-src 'self'; connect-src https://*.convex.site; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
     <title>Nahfahrt</title>
+    <style>
+      /* Only keeps the skeleton below from adding a second screen height before it goes. */
+      #boot {
+        position: fixed;
+        inset: 0;
+      }
+    </style>
   </head>
   <body>
+    <!-- The start page as plain HTML: it is on screen before the script has been parsed.
+         main.tsx replaces it with the app in the same frame. -->
+    <div id="boot" class="screen" aria-hidden="true">
+      <header class="bar"><h1 class="brand">Nahfahrt</h1></header>
+      <div class="scroll home">
+        <section class="search-card">
+          <div class="fields">
+            <div class="field">
+              <span class="field-label">Start</span>
+              <span class="field-placeholder">Bahnhof, Haltestelle, Adresse</span>
+            </div>
+            <div class="field">
+              <span class="field-label">Ziel</span>
+              <span class="field-placeholder">Bahnhof, Haltestelle, Adresse</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

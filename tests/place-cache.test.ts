@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Place } from "../convex/lib/places";
+import type { Station } from "../src/store";
 
 const memory = new Map<string, string>();
 globalThis.localStorage = {
@@ -13,6 +14,7 @@ globalThis.localStorage = {
 
 const hbf: Place = { n: "Stuttgart Hbf", y: 48.78, x: 9.18, i: "de:1" };
 const street: Place = { n: "Musterstraße 1", s: "Stuttgart", y: 48.7, x: 9.1, a: 1 };
+const stop: Station = { key: "s", name: "Hauptbahnhof", lat: 48.78, lon: 9.18, count: 0, last: 0 };
 
 // The cache keeps a copy in memory, so each test loads the module fresh.
 async function fresh() {
@@ -56,5 +58,37 @@ describe("cached place searches", () => {
     for (let i = 0; i < 90; i++) store.storePlaces(`Ort ${String.fromCharCode(97 + (i % 26))}${i}x`.replace(/\d/g, ""), [hbf]);
     const saved = JSON.parse(memory.get("nf.places.v1") ?? "[]") as unknown[];
     expect(saved.length).toBeLessThanOrEqual(80);
+  });
+});
+
+describe("cached stations and routes", () => {
+  beforeEach(() => memory.clear());
+
+  // Nach dem ersten Zugriff bedient sich das Modul aus dem Speicher; nur eigene Schreibwege pflegen ihn nach.
+  it("parses the station list only on first access", async () => {
+    const store = await fresh();
+    store.recordStationUse(stop);
+    const read = vi.spyOn(globalThis.localStorage, "getItem");
+    expect(store.getStations()).toHaveLength(1);
+    expect(store.getStations()).toHaveLength(1);
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+  });
+
+  it("parses the routes only on first access", async () => {
+    const store = await fresh();
+    store.recordRoute(stop, { ...stop, key: "t" });
+    const read = vi.spyOn(globalThis.localStorage, "getItem");
+    expect(store.getRoutes()).toHaveLength(1);
+    expect(store.getRoutes()).toHaveLength(1);
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+  });
+
+  it("hands out a copy, so callers may sort the list", async () => {
+    const store = await fresh();
+    store.recordStationUse(stop);
+    store.getStations().sort((left, right) => right.count - left.count);
+    expect(store.getStations()).toHaveLength(1);
   });
 });

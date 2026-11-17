@@ -62,7 +62,14 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
+/** Einmal geparst, bleiben Stationen und Strecken im Speicher; jeder Schreibvorgang hier pflegt sie nach. */
+let stationsCache: Station[] | undefined;
+let routesCache: Route[] | undefined;
+
 function write(key: string, value: unknown): void {
+  // Der Zwischenspeicher folgt jedem Schreibweg des Moduls.
+  if (key === STATIONS) stationsCache = value as Station[];
+  else if (key === ROUTES) routesCache = value as Route[];
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
@@ -89,7 +96,11 @@ export function stationFromPlace(place: Place): Station {
   };
 }
 
-export const getStations = (): Station[] => read<Station[]>(STATIONS, []);
+/** Eine Kopie: Aufrufer sortieren und verändern die Liste für ihre Zwecke. */
+export const getStations = (): Station[] => {
+  stationsCache ??= read<Station[]>(STATIONS, []);
+  return [...stationsCache];
+};
 
 function saveStations(stations: Station[]): void {
   const kept = byUsage(stations).slice(0, MAX_STATIONS);
@@ -156,7 +167,11 @@ export function regionHint(): string | undefined {
   return top ? `${top.lat.toFixed(2)},${top.lon.toFixed(2)}` : undefined;
 }
 
-export const getRoutes = (): Route[] => read<Route[]>(ROUTES, []);
+/** Eine Kopie, wie bei den Stationen. */
+export const getRoutes = (): Route[] => {
+  routesCache ??= read<Route[]>(ROUTES, []);
+  return [...routesCache];
+};
 
 export function recordRoute(from: Station, to: Station): void {
   if (from.me || to.me) return;
