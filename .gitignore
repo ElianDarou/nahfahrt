@@ -1,5 +1,4 @@
 node_modules/
-dist/
 .env.local
 .env
 *.log
@@ -9,7 +8,4 @@ android/keystore.properties
 *.keystore
 scripts/compare-cases.local.json
 
-# Benchmark fixtures and browser profile
-scripts/bench/.cache/
-dist-bench/
 __pycache__/

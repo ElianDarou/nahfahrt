@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="app_background">#121722</color>
-    <bool name="light_system_bars">false</bool>
+    <color name="app_background">#0F1511</color>
 </resources>
