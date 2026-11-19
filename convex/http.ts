@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { parseFilters } from "./lib/filters";
+import { cacheKey, cacheable } from "./lib/placeCache";
 import type { Reservation } from "./quota";
 import type { PlaceType } from "./lib/journeys";
 import {
@@ -114,14 +115,30 @@ for (const path of ["/v1/places", "/v1/nearby", "/v1/journeys", "/v1/trip"]) {
 http.route({
   path: "/v1/places",
   method: "GET",
-  handler: httpAction(async (_ctx, request) => {
+  handler: httpAction(async (ctx, request) => {
     const params = new URL(request.url).searchParams;
     const text = params.get("q")?.trim() ?? "";
     const near = params.get("near") ?? undefined;
     if (text.length < 2 || text.length > 80) return failure("bad_request", 400);
     if (near !== undefined && !COORDINATES.test(near)) return failure("bad_request", 400);
+    const key = cacheKey(text, near);
     try {
-      return json({ r: await searchPlaces(text, near) }, 200, 86_400);
+      const known = await ctx.runQuery(internal.placeCache.lookup, { key });
+      if (known) return json({ r: known }, 200, 86_400);
+    } catch (error) {
+      // The cache is only an accelerator; a broken read must not fail the search.
+      console.error("place cache read failed", error);
+    }
+    try {
+      const places = await searchPlaces(text, near);
+      if (cacheable(places)) {
+        try {
+          await ctx.runMutation(internal.placeCache.store, { key, places });
+        } catch (error) {
+          console.error("place cache write failed", error);
+        }
+      }
+      return json({ r: places }, 200, 86_400);
     } catch (error) {
       console.error("place search failed", error);
       return failure("upstream", 502);
