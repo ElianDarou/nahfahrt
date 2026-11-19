@@ -20,6 +20,7 @@ object Store {
     const val PLACES = "nf.places.v1"
     const val LIVE_GPS = "nf.liveGps.v1"
     const val LAST = "nf.last.v1"
+    const val PREFETCH = "nf.prefetch.v1"
 
     private const val MAX_STATIONS = 200
     private const val MAX_ROUTES = 30
@@ -93,6 +94,35 @@ object Store {
         if (index >= 0) list[index] = updated else list += updated
         saveStations(list)
         return updated
+    }
+
+    /**
+     * Both ends of a search in one write. Sorting and encoding the station list used to happen
+     * twice, right before the results screen opened; once is enough.
+     */
+    @Synchronized
+    fun recordSearchUse(from: Station, to: Station): Pair<Station, Station> {
+        val now = System.currentTimeMillis()
+        val list = getStations().toMutableList()
+        fun bump(station: Station): Station {
+            if (station.isMe) return station
+            val index = list.indexOfFirst { it.key == station.key }
+            val known = if (index >= 0) list[index] else station
+            val updated = known.copy(
+                name = station.name,
+                sub = station.sub,
+                id = station.id ?: known.id,
+                count = known.count + 1,
+                last = now,
+            )
+            if (index >= 0) list[index] = updated else list += updated
+            return updated
+        }
+        val usedFrom = bump(from)
+        val usedTo = bump(to)
+        saveStations(list)
+        recordRoute(usedFrom, usedTo)
+        return usedFrom to usedTo
     }
 
     fun recordStationUse(station: Station): Station =
@@ -252,6 +282,11 @@ object Store {
         fun kept(station: Station?) = if (station?.isMe == true) Station.Location else station
         Files.write(LAST, LastSearch.serializer(), LastSearch(kept(from), kept(to)))
     }
+
+    /** When the route in the form was last loaded ahead at start, in milliseconds; 0 when never. */
+    fun lastPrefetchAt(): Long = Files.readRaw(PREFETCH)?.toLongOrNull() ?: 0L
+
+    fun setLastPrefetchAt(at: Long) = Files.writeRaw(PREFETCH, at.toString())
 
     // The live position switch: this yes or no is all that is stored about location.
 

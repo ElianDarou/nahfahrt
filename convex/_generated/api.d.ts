@@ -8,12 +8,16 @@
  * @module
  */
 
+import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lib_filters from "../lib/filters.js";
 import type * as lib_journeys from "../lib/journeys.js";
+import type * as lib_placeCache from "../lib/placeCache.js";
+import type * as lib_placeSchema from "../lib/placeSchema.js";
 import type * as lib_places from "../lib/places.js";
 import type * as lib_transitous from "../lib/transitous.js";
 import type * as lib_trip from "../lib/trip.js";
+import type * as placeCache from "../placeCache.js";
 import type * as quota from "../quota.js";
 
 import type {
@@ -23,12 +27,16 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  crons: typeof crons;
   http: typeof http;
   "lib/filters": typeof lib_filters;
   "lib/journeys": typeof lib_journeys;
+  "lib/placeCache": typeof lib_placeCache;
+  "lib/placeSchema": typeof lib_placeSchema;
   "lib/places": typeof lib_places;
   "lib/transitous": typeof lib_transitous;
   "lib/trip": typeof lib_trip;
+  placeCache: typeof placeCache;
   quota: typeof quota;
 }>;
 

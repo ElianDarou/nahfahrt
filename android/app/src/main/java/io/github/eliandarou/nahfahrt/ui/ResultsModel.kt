@@ -24,6 +24,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.SupervisorJob
@@ -142,18 +143,25 @@ class ResultsModel(private val app: AppState, val from: Station, val to: Station
     }
 
     /**
-     * A card was opened, so the live view is one tap away. On Wi-Fi its stop lists are loaded now;
-     * on mobile data nothing is fetched that may never be looked at.
+     * A card was opened, so the live view is one tap away. The request starts a moment later and
+     * only while nothing else is loading: on a slow connection what the user is waiting for comes
+     * first, and a card opened by mistake costs nothing. On mobile data only this card's vehicle
+     * is loaded (one request, about 0.2 KB); on Wi-Fi the next leg is fetched as well.
      */
     fun prepareLive(journey: Journey) {
-        if (!Network.unmetered(app.context)) return
         val saved = Saved.find(journeyKey(journey))
+        val ahead = if (Network.unmetered(app.context)) AHEAD else 1
         val legs = journey.vehicles
-        for (index in vehiclesToFollow(journey, nowMinutes()).take(AHEAD)) {
-            val leg = legs[index]
-            val id = leg.i ?: continue
-            if (hasCoordinates(saved?.stopsOf(index))) continue
-            Api.prefetchTrip(TripQuery(id, leg.a, leg.b, update = false))
+        val indexes = vehiclesToFollow(journey, nowMinutes()).take(ahead)
+        scope.launch {
+            delay(400)
+            if (loading || paging || request?.isActive == true) return@launch
+            for (index in indexes) {
+                val leg = legs[index]
+                val id = leg.i ?: continue
+                if (hasCoordinates(saved?.stopsOf(index))) continue
+                Api.prefetchTrip(TripQuery(id, leg.a, leg.b, update = false))
+            }
         }
     }
 

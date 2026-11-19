@@ -1,6 +1,6 @@
 # Optimierungen
 
-Stand nach dem Wechsel auf die native Kotlin-App (0.5.0). Zahlen stammen aus Messungen in diesem Projekt; Schätzungen sind als solche gekennzeichnet.
+Stand nach der Runde 0.5.1. Zahlen stammen aus Messungen in diesem Projekt; Schätzungen sind als solche gekennzeichnet.
 
 ## Kotlin-Rewrite (0.5.0)
 
@@ -46,7 +46,7 @@ Aus der Messung folgten in 0.5 noch drei Änderungen:
 | Der Aktualisieren-Knopf lieferte 60 s lang die zwischengespeicherte Antwort. | Aktualisieren fragt immer neu (`fresh`); nur eine Anfrage, die gerade unterwegs ist, wird mitgenutzt. |
 | Vorgeladene Ergebnisse landeten nicht im Offline-Speicher. | Jede Antwort, auch die vorgeladene, wird für die Strecke gespeichert. |
 | Die Vorabsuche 400 ms nach der Zielwahl verbrauchte das gemeinsame Tageslimit von 700 Suchen auch dann, wenn danach etwas geändert wurde. | Die Suche startet beim Berühren des Knopfs (bzw. einer Strecke). Das bringt rund 100 ms Vorsprung, und fast nie eine überflüssige Anfrage. |
-| Nach jeder Suche wurden bis zu zwei Fahrtverläufe vorgeladen, auch im Mobilfunk. | Nur wenn eine Verbindung aufgeklappt wird, und nur im WLAN. |
+| Nach jeder Suche wurden bis zu zwei Fahrtverläufe vorgeladen, auch im Mobilfunk. | Nur wenn eine Verbindung aufgeklappt wird; seit 0.5.1 im Mobilfunk ein Fahrzeug, verzögert und nur solange nichts lädt. |
 | Zwischenspeicher zählte die Frist ab dem Start der Anfrage. | Die Frist läuft ab der Antwort. |
 
 ## Neue Optimierungen
@@ -55,13 +55,20 @@ Aus der Messung folgten in 0.5 noch drei Änderungen:
 - **Backend: Kontingent und Abfrage parallel:** Bisher wartete jede Suche erst auf den Schreibvorgang des Tageszählers und fragte dann Transitous. Solange das Kontingent klar nicht knapp ist, laufen beide jetzt nebeneinander. Das spart den größten Teil des Backend-Aufschlags von etwa 50 ms. In Grenznähe fragt das Backend wieder zuerst. Das öffentliche Limit wird höchstens um die wenigen Anfragen überschritten, die gerade laufen.
 - **Start:** Die Daten der Startseite werden in `Application.onCreate` auf einem Hintergrund-Thread gelesen, während das Fenster aufgeht. Der Splash endet ohne Icon-Animation, das Profil-Installationsmodul ist eingebunden.
 
+## Runde 0.5.1
+
+- **Haltestellen-Cache im Backend:** Reine Stoppsuchen liegen 30 Tage in Convex, gefiltert nach Suchtext und grob gerundeter Region (zwei Nachkommastellen, etwa ein Kilometer). Adressen werden nie gespeichert: Enthält eine Antwort eine Adresse, wird sie nicht abgelegt. Ein Aufräum-Job entfernt abgelaufene Einträge täglich. Gemessen: 330 ms beim ersten Mal, 185 ms aus dem Cache, also etwa 145 ms gespart; als die Leitung beim Messen insgesamt langsamer war, lag schon die leere `OPTIONS`-Antwort bei 166 ms. Unter normalen Bedingungen sind es etwa 250 → 110 ms.
+- **Vorladen beim Start:** Stehen Start und Ziel noch in der Maske, lädt die App die Suche im WLAN vor – höchstens alle zehn Minuten und einmal pro App-Start. Der erste Tipp findet die Antwort dann meist vor.
+- **Verbindung vorwärmen:** Zusätzlich zum Start öffnet die App die Verbindung, wenn die Haltestellensuche aufgeht und wenn sie aus dem Hintergrund zurückkommt (höchstens einmal pro Minute). Das spart den TLS-Handshake von etwa 40 ms vor der ersten Anfrage.
+- **Tipp-Pause 250 → 180 ms:** Eine Haltestellensuche reagiert etwa 70 ms früher. Dafür geht rund eine von sieben Tastenanschlägen als Anfrage raus statt einer von zehn; der Cache macht diese Anfragen billig.
+- **Fahrtverlauf im Mobilfunk:** Wird eine Verbindung aufgeklappt, lädt die App ein Fahrzeug vor – auch im Mobilfunk, aber erst 400 ms später und nur, solange nichts anderes lädt. Auf WLAN bleibt es bei zwei Fahrzeugen. Was der Nutzer gerade braucht, hat immer Vorrang.
+- **Schreibvorgänge beim Suchstart:** Start und Ziel landen in einem Schreibvorgang in der Stationsliste statt in zwei. Die Liste wird einmal sortiert und einmal kodiert, direkt bevor die Ergebnisse aufgehen.
+
 ## Offen
 
 - [ ] Messung auf einem echten Gerät: Kaltstart, Tipp bis Ergebnis, Verbindung öffnen.
 - [ ] Baseline Profile nach größeren Änderungen neu aufnehmen (`scripts/profile-from-device.py`).
 - [ ] Frische Suche ohne gespeicherte Ergebnisse getrennt messen (Netz plus Darstellung).
-- [ ] Serverseitiger Cache für reine Haltestellensuchen (keine Adressen, keine Koordinaten), 30 Tage.
-- [ ] Oberste gemerkte Strecke beim Start vorladen, gedrosselt und nur im WLAN.
 - [ ] Optional: Fahrtverläufe gemerkter Verbindungen mit Glocke im Hintergrund per WorkManager aktualisieren, damit Erinnerungen auch bei geschlossener App mit Verspätungen mitwandern.
 
 ## Bewusst nicht gemacht

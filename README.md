@@ -30,7 +30,7 @@ Die aktuelle APK liegt unter [Releases](https://github.com/ElianDarou/nahfahrt/r
 
 ## Datenmenge
 
-Die Oberfläche steckt komplett in der App, übers Netz läuft nur die Suche. Das Backend kürzt die Antworten auf das Nötigste. Im Voraus lädt die App nur, was der Nutzer gleich braucht: Eine Suche startet, sobald der Finger den Knopf berührt; Halte einer aufgeklappten Verbindung lädt sie nur im WLAN.
+Die Oberfläche steckt komplett in der App, übers Netz läuft nur die Suche. Das Backend kürzt die Antworten auf das Nötigste. Im Voraus lädt die App nur, was der Nutzer gleich braucht: Eine Suche startet, sobald der Finger den Knopf berührt, im WLAN auch schon beim App-Start für die Strecke in der Maske. Die Halte einer aufgeklappten Verbindung lädt sie für dieses eine Fahrzeug, auf WLAN auch für das nächste.
 
 | | Rohdaten (gzip) | Nahfahrt (gzip) |
 |---|---|---|
@@ -80,7 +80,7 @@ Beim Vergleich mit bahn.de (Filter „Nur D-Ticket-Verbindungen“) wurden 39 vo
 
 ## Datenschutz
 
-Stationen, Favoriten und Verlauf bleiben auf dem Gerät. Beim ersten Start nach dem Wechsel von Version 0.4 übernimmt die App sie einmalig aus dem Speicher der alten Web-Oberfläche; dabei verlässt nichts das Handy. Antworten auf Haltestellensuchen ohne Ziffern bleiben dort bis zu 30 Tage, damit eine wiederholte Suche keine Daten braucht; Adresssuchen nur bis die App geschlossen wird. Für eine Suche gehen Suchtext oder Koordinaten über das Convex-Backend an Transitous. Das Backend speichert nur einen Tageszähler. Ein Konto gibt es nicht.
+Stationen, Favoriten und Verlauf bleiben auf dem Gerät. Beim ersten Start nach dem Wechsel von Version 0.4 übernimmt die App sie einmalig aus dem Speicher der alten Web-Oberfläche; dabei verlässt nichts das Handy. Antworten auf Haltestellensuchen ohne Ziffern bleiben dort bis zu 30 Tage, damit eine wiederholte Suche keine Daten braucht; Adresssuchen nur bis die App geschlossen wird. Für eine Suche gehen Suchtext oder Koordinaten über das Convex-Backend an Transitous. Das Backend speichert den Tageszähler und, bei reinen Haltestellensuchen, den Suchtext mit einer auf etwa einen Kilometer gerundeten Region für 30 Tage, damit dieselbe Suche nicht erneut zu Transitous geht. Antworten mit Adressen werden nicht gespeichert. Ein Konto gibt es nicht.
 
 Der Standort ist optional und wird nur bei geöffneter App abgefragt:
 
