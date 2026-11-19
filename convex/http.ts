@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { parseFilters } from "./lib/filters";
+import type { Reservation } from "./quota";
 import type { PlaceType } from "./lib/journeys";
 import {
   UpstreamError,
@@ -32,6 +33,49 @@ function json(body: unknown, status: number, cacheSeconds = 0): Response {
 }
 
 const failure = (code: string, status: number) => json({ e: code }, status);
+
+/**
+ * The reservation is a database write and used to stand in front of every upstream call.
+ * While the day's budget is clearly not close, both now run side by side, which takes that
+ * round trip out of every search. The hint lives in this instance's memory: a fresh instance
+ * knows nothing and asks first, and every answer brings the hint up to date. Near the limit,
+ * it is back to asking first, so the upstream budget is never overrun by more than the few
+ * requests already in flight.
+ */
+interface QuotaHint {
+  day: string;
+  left: number;
+}
+const hints: { plan?: QuotaHint; trip?: QuotaHint } = {};
+const PLAN_MARGIN = 60;
+const TRIP_MARGIN = 500;
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+const roomFor = (hint: QuotaHint | undefined, margin: number): boolean =>
+  !!hint && hint.day === today() && hint.left > margin;
+
+/** Runs `work` once the reservation allows it, side by side with the reservation when there is room. */
+async function withQuota<T>(
+  kind: "plan" | "trip",
+  margin: number,
+  reserve: () => Promise<Reservation>,
+  work: () => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  if (roomFor(hints[kind], margin)) {
+    const pending = work();
+    // A failure of the work must not go unhandled while the reservation is still out.
+    pending.catch(() => undefined);
+    const reservation = await reserve();
+    hints[kind] = { day: reservation.day, left: reservation.left };
+    if (!reservation.ok) return { ok: false };
+    return { ok: true, value: await pending };
+  }
+  const reservation = await reserve();
+  hints[kind] = { day: reservation.day, left: reservation.left };
+  if (!reservation.ok) return { ok: false };
+  return { ok: true, value: await work() };
+}
 
 const COORDINATES = /^-?\d{1,2}(\.\d{1,7})?,-?\d{1,3}(\.\d{1,7})?$/;
 const PLACE = /^[\p{L}\p{N} _:.,@|()+/-]{1,160}$/u;
@@ -111,13 +155,15 @@ http.route({
     // A search from the current position carries it in the URL, so nothing may cache it.
     const cacheSeconds = params.get("priv") === "1" ? 0 : 30;
 
-    const allowed = await ctx.runMutation(internal.quota.reservePlanCalls, {
-      calls: planCallsFor(search),
-    });
-    if (!allowed) return failure("daily_limit", 429);
-
     try {
-      return json(await searchJourneys(search), 200, cacheSeconds);
+      const result = await withQuota(
+        "plan",
+        PLAN_MARGIN,
+        () => ctx.runMutation(internal.quota.reservePlanCalls, { calls: planCallsFor(search) }),
+        () => searchJourneys(search),
+      );
+      if (!result.ok) return failure("daily_limit", 429);
+      return json(result.value, 200, cacheSeconds);
     } catch (error) {
       console.error("journey search failed", error instanceof UpstreamError ? error.status : "network");
       const unknownPlace = error instanceof UpstreamError && error.status === 404;
@@ -140,11 +186,16 @@ http.route({
     if (!TRIP_ID.test(id) || !MINUTES.test(boardAt) || !MINUTES.test(alightAt)) {
       return failure("bad_request", 400);
     }
-    const allowed = await ctx.runMutation(internal.quota.reserveTripCall, {});
-    if (!allowed) return failure("daily_limit", 429);
     try {
       const update = params.get("u") === "1";
-      return json(await followTrip(id, Number(boardAt), Number(alightAt), update), 200, 20);
+      const result = await withQuota(
+        "trip",
+        TRIP_MARGIN,
+        () => ctx.runMutation(internal.quota.reserveTripCall, {}),
+        () => followTrip(id, Number(boardAt), Number(alightAt), update),
+      );
+      if (!result.ok) return failure("daily_limit", 429);
+      return json(result.value, 200, 20);
     } catch (error) {
       console.error("trip lookup failed", error);
       const unknown = error instanceof UpstreamError && error.status === 404;
