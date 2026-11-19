@@ -80,6 +80,9 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Delays may have changed the times while the app was away.
         state?.let { Reminders.syncAll(applicationContext); it.changed() }
+        // The socket may have gone while the app was in the background; the first tap should not
+        // pay for DNS and TLS again. Api skips this when the last warm-up is only seconds old.
+        Api.warmUp()
     }
 
     override fun onDestroy() {

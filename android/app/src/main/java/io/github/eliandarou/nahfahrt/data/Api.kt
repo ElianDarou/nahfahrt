@@ -104,8 +104,15 @@ object Api {
     /**
      * Opens the connection to the backend while the start page is on screen. DNS, TCP and TLS
      * then lie behind the first search instead of in front of it. Costs a few hundred bytes.
+     * Within a minute the socket is usually still in the pool; calling it often is fine.
      */
+    @Volatile
+    private var warmedAt = 0L
+
     fun warmUp() {
+        val now = System.currentTimeMillis()
+        if (now - warmedAt < 60_000) return
+        warmedAt = now
         scope.launch {
             runCatching {
                 val connection = URL("${BuildConfig.API_URL}/v1/journeys").openConnection() as HttpURLConnection

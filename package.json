@@ -1,6 +1,6 @@
 {
   "name": "nahfahrt",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "Schlanke Verbindungsauskunft nur für Deutschlandticket-Verbindungen (Backend und Werkzeuge; die App liegt in android/)",

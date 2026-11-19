@@ -69,7 +69,11 @@ import kotlinx.coroutines.launch
 import kotlin.math.hypot
 import kotlin.math.round
 
-private const val DEBOUNCE_MS = 250L
+/**
+ * A pause after the last keystroke. Shorter than this sends more requests than it saves waiting:
+ * at 180 ms roughly one in seven keystrokes costs one, at 250 ms it is one in ten.
+ */
+private const val DEBOUNCE_MS = 180L
 private const val MIN_REMOTE_CHARS = 2
 
 private fun isSamePlace(left: Station, right: Station): Boolean {
@@ -97,7 +101,11 @@ fun PickerScreen(app: AppState, title: String, stopsOnly: Boolean, onPick: (Stat
     var renaming by remember { mutableStateOf<Station?>(null) }
     val focus = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(Unit) {
+        focus.requestFocus()
+        // The first remote search then finds the connection already open.
+        Api.warmUp()
+    }
 
     LaunchedEffect(query) {
         val text = query.trim()

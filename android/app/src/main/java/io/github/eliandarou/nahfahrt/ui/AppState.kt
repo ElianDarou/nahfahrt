@@ -13,7 +13,9 @@ import io.github.eliandarou.nahfahrt.logic.FilterState
 import io.github.eliandarou.nahfahrt.logic.toQuery
 import io.github.eliandarou.nahfahrt.model.Journey
 import io.github.eliandarou.nahfahrt.model.Station
+import io.github.eliandarou.nahfahrt.platform.Network
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -61,6 +63,28 @@ class AppState(val context: Context, val scope: CoroutineScope) {
     var dateTime by mutableStateOf(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))
     var filters by mutableStateOf(FilterState())
     var advancedOpen by mutableStateOf(false)
+
+    init {
+        // Off the main thread: this reads a file and asks the system about the network, and the
+        // first frame should not wait for either.
+        scope.launch(Dispatchers.IO) { prefetchLastRoute() }
+    }
+
+    /**
+     * Loads the route that already stands in the form, so the first tap finds it ready. Only on
+     * an unmetered connection, at most every ten minutes, and only once per app start: this must
+     * never cost data for a search the user did not ask for.
+     */
+    private fun prefetchLastRoute() {
+        val start = from ?: return
+        val destination = to ?: return
+        if (start.key == destination.key) return
+        if (!Network.unmetered(context)) return
+        val now = System.currentTimeMillis()
+        if (now - Store.lastPrefetchAt() < 10 * 60_000) return
+        Store.setLastPrefetchAt(now)
+        Api.prefetchJourneys(JourneyQuery(start, destination, now))
+    }
 
     var results by mutableStateOf<ResultsModel?>(null)
         private set
@@ -160,9 +184,7 @@ class AppState(val context: Context, val scope: CoroutineScope) {
 
     fun startSearch(start: Station, destination: Station, plan: When) {
         advancedOpen = false
-        val usedStart = Store.recordStationUse(start)
-        val usedDestination = Store.recordStationUse(destination)
-        Store.recordRoute(usedStart, usedDestination)
+        val (usedStart, usedDestination) = Store.recordSearchUse(start, destination)
         from = usedStart
         to = usedDestination
         Store.setLastSearch(usedStart, usedDestination)
